@@ -21,11 +21,21 @@ This container runs multiple ASGI projects (Django, FastAPI, etc.) under a singl
       │ Project A  │ │ Project B  │ │ Project C  │
       │ /home/a    │ │ /home/b    │ │ /home/c    │
       └────────────┘ └────────────┘ └────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                    SSHD (port 2222)                         │
+│         Remote development access for AI agents             │
+│         Each project user → /home/{project}                 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
 
 ```bash
+# Generate SSH host keys (first time only)
+invoke workspaces.setup
+
+# Start the container
 docker compose --profile workspaces up --build
 ```
 
@@ -40,9 +50,13 @@ workspaces/
 │   └── nginx.conf           # Main nginx config (port 7000)
 ├── supervisor/
 │   └── supervisord.conf     # Main supervisor config
+├── ssh/
+│   ├── sshd_config          # SSH daemon config (port 22 → 2222)
+│   └── keys/                # Container host keys (private gitignored)
 └── projects/
     ├── nginx/               # Project nginx configs (gitignored)
     ├── supervisor/          # Project supervisor configs (gitignored)
+    ├── ssh/                 # Project SSH authorized_keys (gitignored)
     └── repos/               # Project git repositories → /home/
 ```
 
@@ -100,6 +114,56 @@ Create a Linux user for the project inside the container:
 ```bash
 docker exec workspaces useradd -m -s /bin/bash myproject
 ```
+
+#### SSH Access for AI Agents (Cursor Remote SSH)
+
+The workspaces container exposes SSH on port 2222 for remote development with Cursor or other editors. To enable SSH access for a project user:
+
+**Option A: Password Authentication**
+
+```bash
+docker exec -it workspaces passwd myproject
+```
+
+Then connect with: `ssh myproject@localhost -p 2222`
+
+**Option B: SSH Key Authentication (Recommended)**
+
+Create a file in `workspaces/projects/ssh/` named after the user containing their public keys:
+
+```bash
+# Create authorized_keys file for the user
+echo "ssh-ed25519 AAAA... your-key-comment" > workspaces/projects/ssh/myproject
+```
+
+The container mounts `projects/ssh/` to `/etc/ssh/authorized_keys/`, and sshd is configured to look for `/etc/ssh/authorized_keys/%u` (where `%u` is the username).
+
+**Connecting with Cursor Remote SSH**
+
+1. Open Cursor
+2. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS)
+3. Type "Remote-SSH: Connect to Host..."
+4. Enter: `myproject@localhost:2222`
+5. Cursor opens with `/home/myproject` as the workspace root
+
+All terminal commands and AI agent actions will run as the `myproject` user:
+- `whoami` → `myproject`
+- `pwd` → `/home/myproject`
+- `hostname` → container ID
+
+**Optional: SSH Config for Convenience**
+
+Add to `~/.ssh/config` for easier access:
+
+```ssh-config
+Host myproject-workspace
+    HostName localhost
+    Port 2222
+    User myproject
+    # IdentityFile ~/.ssh/id_ed25519  # if using key auth
+```
+
+Then connect via "Remote-SSH: Connect to Host..." → `myproject-workspace`
 
 ### 4. Add Project Repository
 
@@ -293,7 +357,14 @@ DATABASES = {
 
 ## Port Allocation
 
-Assign unique ports to each project:
+**External Ports (exposed to host):**
+
+| Service | Host Port | Container Port | Purpose |
+|---------|-----------|----------------|---------|
+| Nginx   | 7000      | 7000           | HTTP reverse proxy |
+| SSHD    | 2222      | 22             | Remote development |
+
+**Internal Ports (per project):**
 
 | Project | Port |
 |---------|------|

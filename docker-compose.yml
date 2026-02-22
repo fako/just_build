@@ -54,10 +54,12 @@ services:
       context: ./workspaces
     ports:
       - "127.0.0.1:7000:7000"
+      - "127.0.0.1:2222:22"
     volumes:
       - ./workspaces/projects/repos:/home
       - ./workspaces/projects/supervisor:/etc/supervisor/conf.d
       - ./workspaces/projects/nginx:/etc/nginx/conf.d
+      - ./workspaces/projects/ssh:/etc/ssh/authorized_keys
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,25 @@
+# SSH Daemon Configuration for Agent Workspaces
+
+Port 22
+ListenAddress 0.0.0.0
+
+# Authentication
+PermitRootLogin no
+PasswordAuthentication yes
+PubkeyAuthentication yes
+AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+
+# Security
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+UsePAM yes
+
+# Environment
+AcceptEnv LANG LC_*
+
+# Subsystems
+Subsystem sftp /usr/lib/openssh/sftp-server
+
+# Logging
+SyslogFacility AUTH
+LogLevel INFO
