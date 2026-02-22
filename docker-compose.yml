@@ -1,0 +1,70 @@
+volumes:
+  postgres:
+
+
+services:
+
+  postgres:
+    profiles: [services, control, workspaces]
+    image: postgres:16
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./services/postgres/scripts/:/scripts/
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    profiles: [services, control, workspaces]
+    image: redis:6-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ 'CMD', 'redis-cli', 'ping' ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  tika:
+    profiles: [services, workspaces]
+    build:
+      dockerfile: "Dockerfile-tika"
+      context: "./services/tika"
+    volumes:
+      - ./services/tika/tika-config.xml:/config/tika-config.xml
+    ports:
+      - "127.0.0.1:9998:9998"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/9998'"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  workspaces:
+    profiles: [workspaces]
+    build:
+      dockerfile: "Dockerfile"
+      context: ./workspaces
+    ports:
+      - "127.0.0.1:7000:7000"
+    volumes:
+      - ./workspaces/projects/repos:/home
+      - ./workspaces/projects/supervisor:/etc/supervisor/conf.d
+      - ./workspaces/projects/nginx:/etc/nginx/conf.d
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

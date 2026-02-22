@@ -1,0 +1,21 @@
+# Example supervisor configuration for a project
+# Copy this file and replace the placeholders:
+#   PROJECT_NAME  - e.g., myapp
+#   PROJECT_PORT  - e.g., 8001 (unique per project)
+#   ASGI_MODULE   - e.g., config.asgi (Django) or main:app (FastAPI)
+
+[program:PROJECT_NAME]
+command=uvicorn ASGI_MODULE:application --host 127.0.0.1 --port PROJECT_PORT --workers 2 --loop uvloop --http httptools
+directory=/home/PROJECT_NAME
+user=www-data
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+redirect_stderr=true
+stdout_logfile=/var/log/projects/PROJECT_NAME.log
+stdout_logfile_maxbytes=50MB
+stdout_logfile_backups=5
+environment=
+    DJANGO_SETTINGS_MODULE="config.settings",
+    PYTHONPATH="/home/PROJECT_NAME"

@@ -1,10 +1,8 @@
 # Installation
 
-The local setup is made in such a way that you can run the project inside and outside of containers.
-It can be convenient to run some code for inspection outside of containers.
-To stay close to the production environment it works well to run the project in containers.
-External services like the database run in containers, so it's always necessary to use Docker.
-The project also heavily leans on its tests through pytest.
+The local setup is made to allow agents to work inside a "mainframe" like container called workspaces.
+Projects to build exists as users within this workspaces container.
+Following this readme will setup the environment, but doesn't setup any agents.
 
 
 ## Prerequisites
