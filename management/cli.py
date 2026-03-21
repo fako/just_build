@@ -1,6 +1,11 @@
 import getpass
+import os
+from pathlib import Path
+
 from invoke import task, Context, Collection
 from invoke.watchers import Responder, FailingResponder
+
+from management.credentials.tests.pass_helpers.helpers import setup_test_store
 
 
 @task(name="setup_database", help={
@@ -81,8 +86,24 @@ def management_test(ctx: Context, test_file: str | None = None, test_method: str
         )
 
 
+@task(name="setup_test_store")
+def setup_test_store_task(ctx: Context) -> None:
+    """
+    Recreates the fixed pass test store for debugging and tests.
+    """
+    configured_gpghome = ctx.config.management.credentials.gpghome
+    assert configured_gpghome, "Set management.credentials.gpghome via activate.sh or invoke config first"
+
+    gpghome = Path(str(configured_gpghome)).expanduser()
+
+    store_dir = setup_test_store(gpghome)
+    print(f"Test pass store ready at {store_dir}")
+    print(f"Test GPG home ready at {gpghome}")
+
+
 namespace = Collection(
     "management",
     setup_database,
+    setup_test_store_task,
     management_test,
 )

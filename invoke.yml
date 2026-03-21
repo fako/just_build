@@ -11,6 +11,8 @@ management:
     name: "management"
     user: "management"
     password: "qwerty"
+  credentials:
+    gpghome: null
   security:
     secret_key: "unsafe"
     debug: false

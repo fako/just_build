@@ -7,7 +7,7 @@ Following this readme will setup the environment, but doesn't setup any agents.
 
 ## Prerequisites
 
-This project uses `Python 3.12`, `Docker`, `Docker Compose V2` and `psql`.
+This project uses `Python 3.12`, `Docker`, `Docker Compose V2`, `pass` and `psql`.
 Make sure they are installed on your system before installing the project.
 
 
