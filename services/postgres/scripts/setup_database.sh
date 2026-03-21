@@ -49,6 +49,12 @@ configure_database_access() {
     "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO \"$DATABASE_USER\";"
 }
 
+install_vector_extension() {
+  local db_name="$1"
+  psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$db_name" -c \
+    "CREATE EXTENSION IF NOT EXISTS vector;"
+}
+
 ensure_safe_database_name "$DATABASE_NAME"
 ensure_safe_database_name "$TEST_DATABASE_NAME"
 
@@ -74,7 +80,10 @@ psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
 psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
   "CREATE DATABASE \"$TEST_DATABASE_NAME\" OWNER \"$DATABASE_USER\";"
 
-# 4) Inside the new DBs: schema & default privileges
+# 4) Inside the new DBs: extension, schema & default privileges
+install_vector_extension "$DATABASE_NAME"
+install_vector_extension "$TEST_DATABASE_NAME"
+
 configure_database_access "$DATABASE_NAME"
 configure_database_access "$TEST_DATABASE_NAME"
 
