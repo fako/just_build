@@ -7,6 +7,10 @@ tika:
   return_type: "xml"
 
 management:
+  database:
+    name: "management"
+    user: "management"
+    password: "qwerty"
   security:
     secret_key: "unsafe"
     debug: false

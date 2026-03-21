@@ -32,7 +32,7 @@ to prevent weird error messages if you ever run the project outside of its conta
 127.0.0.1 postgres
 127.0.0.1 redis
 127.0.0.1 tika
-127.0.0.1 control
+127.0.0.1 management
 ```
 
 This way you can reach these containers outside of the container network through their names.

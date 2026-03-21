@@ -17,3 +17,4 @@ ipdb==0.13.13
 
 # The dependencies that all agents have access to
 -r workspaces/requirements.txt
+-r management/requirements.txt
