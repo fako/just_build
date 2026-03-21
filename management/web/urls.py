@@ -18,11 +18,16 @@ from django.contrib import admin
 from django.urls import path
 from ninja import NinjaAPI
 
+from access_control.router import router as access_control_router
+
 
 api = NinjaAPI(
     version="0.0.1",
     title="Just Build Management API",
 )
+# Add main router
+api.add_router("", access_control_router)
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),

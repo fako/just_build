@@ -1,0 +1,17 @@
+@baseUrl = http://127.0.0.1:8000
+@projectSlug = acme
+
+### Create a project
+POST {{baseUrl}}/api/v1/projects/
+Content-Type: application/json
+
+{
+  "name": "Acme",
+  "slug": "acme"
+}
+
+### List projects
+GET {{baseUrl}}/api/v1/projects/
+
+### Get one project
+GET {{baseUrl}}/api/v1/projects/{{projectSlug}}/
