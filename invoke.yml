@@ -1,0 +1,16 @@
+postgres:
+  user: "postgres"
+  password: "qwerty"
+
+tika:
+  host: "http://tika:9998"
+  return_type: "xml"
+
+management:
+  security:
+    secret_key: "unsafe"
+    debug: false
+  superusers:
+    - username: fako
+      email: email@fakoberkers.nl
+      password: null
