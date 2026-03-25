@@ -10,6 +10,7 @@ invoke==2.2.1
 
 # Testing & quality
 flake8==7.3.0
+flake8-quotes==3.4.0
 mypy==1.18.2
 pytest==8.4.2
 devtools==0.12.2
