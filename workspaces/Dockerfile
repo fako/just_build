@@ -5,6 +5,7 @@
 FROM python:3.12
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
     nginx \
     supervisor \
     curl \
@@ -13,7 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /var/run/sshd \
-    && mkdir -p /etc/ssh/authorized_keys
+    && mkdir -p /etc/ssh/authorized_keys \
+    && chown root:root /etc/ssh/authorized_keys \
+    && chmod 755 /etc/ssh/authorized_keys
 
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt

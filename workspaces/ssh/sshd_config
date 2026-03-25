@@ -5,7 +5,7 @@ ListenAddress 0.0.0.0
 
 # Authentication
 PermitRootLogin no
-PasswordAuthentication yes
+PasswordAuthentication no
 PubkeyAuthentication yes
 AuthorizedKeysFile /etc/ssh/authorized_keys/%u
 

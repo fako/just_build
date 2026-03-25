@@ -1,5 +1,19 @@
 from pathlib import Path
 
 
-WORKSPACES_DIR = Path(__file__).parent
-SSH_KEYS_DIR = WORKSPACES_DIR / "ssh" / "keys"
+CLI_DIR = Path(__file__).resolve().parent
+WORKSPACES_DIR = CLI_DIR.parent
+PROJECTS_DIR = WORKSPACES_DIR / "projects"
+PROJECT_REPOS_DIR = PROJECTS_DIR / "repos"
+ACTIVE_SUPERVISOR_DIR = PROJECTS_DIR / "supervisor"
+ACTIVE_NGINX_DIR = PROJECTS_DIR / "nginx"
+PROJECT_SSH_DIR = PROJECTS_DIR / "ssh"
+STAGED_DIR = PROJECTS_DIR / "staged"
+STAGED_SUPERVISOR_DIR = STAGED_DIR / "supervisor"
+STAGED_NGINX_DIR = STAGED_DIR / "nginx"
+SSH_DIR = WORKSPACES_DIR / "ssh"
+SSH_KEYS_DIR = SSH_DIR / "keys"
+PROJECT_SSH_KEYS_DIR = SSH_KEYS_DIR / "projects"
+SSH_CONFIG_PATH = SSH_DIR / "config"
+SUPERVISOR_TEMPLATE_PATH = WORKSPACES_DIR / "supervisor" / "example.conf.template"
+NGINX_TEMPLATE_PATH = WORKSPACES_DIR / "nginx" / "example.conf.template"
