@@ -1,9 +1,6 @@
-from pathlib import Path
+from invoke import task
 
-from invoke import task, Collection
-
-WORKSPACES_DIR = Path(__file__).parent
-SSH_KEYS_DIR = WORKSPACES_DIR / "ssh" / "keys"
+from workspaces.cli.constants import SSH_KEYS_DIR
 
 
 @task
@@ -30,7 +27,3 @@ def setup(ctx):
 
     print("\nSSH host keys generated. Rebuild the container to use them:")
     print("  docker compose --profile workspaces up --build")
-
-
-namespace = Collection("workspaces")
-namespace.add_task(setup)
