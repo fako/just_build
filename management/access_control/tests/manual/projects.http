@@ -7,7 +7,8 @@ Content-Type: application/json
 
 {
   "name": "Acme",
-  "slug": "acme"
+  "slug": "acme",
+  "django_module": "web"
 }
 
 ### List projects
@@ -15,3 +16,23 @@ GET {{baseUrl}}/api/v1/projects/
 
 ### Get one project
 GET {{baseUrl}}/api/v1/projects/{{projectSlug}}/
+
+### Patch project setup and SSH metadata
+PATCH {{baseUrl}}/api/v1/projects/{{projectSlug}}/
+Content-Type: application/json
+
+{
+  "setup": {
+    "ssh_access": "2026-03-25T11:00:00Z"
+  },
+  "ssh": {
+    "alias": "acme-workspace",
+    "user": "acme",
+    "host": "localhost",
+    "port": 2222,
+    "identity_file": "workspaces/ssh/keys/projects/acme/id_ed25519"
+  }
+}
+
+### Render aggregate SSH config
+GET {{baseUrl}}/api/v1/projects/ssh-config/

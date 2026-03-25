@@ -24,6 +24,12 @@ source activate.sh
 pip install -r requirements.txt
 ```
 
+To let OpenSSH and Cursor Remote SSH see generated workspace entries, add this once to your user SSH config:
+
+```ssh-config
+Include /absolute/path/to/just_build/workspaces/ssh/config
+```
+
 If you want to run the project outside of a container you'll need to add the following to your hosts file.
 It's strongly recommended to update your ``/etc/hosts`` immediately,
 to prevent weird error messages if you ever run the project outside of its containers.
