@@ -7,6 +7,8 @@ from workspaces.cli.common import (
     assert_container_workspace_absent,
     assert_workspace_state_clean,
     create_container_user_and_home,
+    ensure_workspace_secret_file,
+    ensure_workspace_secret_root,
     ensure_workspace_keypair,
     ensure_workspaces_container,
     log_setup_step,
@@ -31,6 +33,7 @@ def create(ctx, name: str, slug: str, domain: str | None = None, django_module: 
     domain = domain or f"{slug}.localhost"
 
     assert_workspace_state_clean(slug)
+    ensure_workspace_secret_root()
     ensure_workspaces_container(ctx)
     assert_container_workspace_absent(ctx, slug)
 
@@ -39,6 +42,9 @@ def create(ctx, name: str, slug: str, domain: str | None = None, django_module: 
 
     create_container_user_and_home(ctx, workspace.slug)
     log_setup_step(workspace.slug, "home_created")
+
+    secret_path = ensure_workspace_secret_file(ctx, workspace.slug)
+    log_setup_step(workspace.slug, "secrets_created")
 
     private_key, public_key = ensure_workspace_keypair(ctx, workspace.slug)
     publish_authorized_key(ctx, workspace.slug, public_key.read_text().strip())
@@ -63,6 +69,7 @@ def create(ctx, name: str, slug: str, domain: str | None = None, django_module: 
 
     print("")
     print(f"Created workspace {workspace.name} ({workspace.slug}).")
+    print(f"Workspace secrets: {secret_path}")
     print(f"SSH private key: {private_key}")
     print("Next step:")
     print(f"  invoke workspaces.init --workspace-slug={workspace.slug}")

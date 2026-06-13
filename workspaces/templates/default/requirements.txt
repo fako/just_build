@@ -1,0 +1,4 @@
+Django==5.2.12
+Jinja2==3.1.6
+python-dotenv==1.2.2
+

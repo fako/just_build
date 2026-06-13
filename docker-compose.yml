@@ -59,6 +59,7 @@ services:
       - "127.0.0.1:2222:22"
     volumes:
       - ./workspaces/src/repos:/home
+      - ./workspaces/src/secrets:/workspaces/secrets
       - ./workspaces/src/supervisor:/etc/supervisor/conf.d
       - ./workspaces/src/nginx:/etc/nginx/conf.d
       - workspaces_ssh_authorized_keys:/etc/ssh/authorized_keys

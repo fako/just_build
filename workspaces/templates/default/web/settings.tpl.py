@@ -3,6 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(Path("/workspaces/secrets/{{ workspace.slug }}/.env"))
 load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = "django-insecure-local-development-only"

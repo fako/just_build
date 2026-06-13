@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from secrets import token_urlsafe
 from shlex import quote
 
 from fabric import Connection
@@ -13,6 +14,7 @@ from workspaces.cli.constants import (
     ACTIVE_SUPERVISOR_DIR,
     NGINX_TEMPLATE_PATH,
     REPOS_DIR,
+    SECRETS_DIR,
     WORKSPACE_SSH_KEYS_DIR,
     SSH_CONFIG_PATH,
     STAGED_NGINX_DIR,
@@ -27,6 +29,7 @@ DEFAULT_HOST = "localhost"
 DEFAULT_SSH_PORT = 2222
 DEFAULT_PROXY_PORT = 7000
 WORKSPACES_STATE_DIR = "/workspaces/state"
+WORKSPACES_SECRETS_DIR = "/workspaces/secrets"
 ACCOUNT_FILES = ("passwd", "group", "shadow", "gshadow")
 
 
@@ -101,6 +104,18 @@ def workspace_repo_dir(workspace_slug: str) -> Path:
     return REPOS_DIR / workspace_slug
 
 
+def workspace_secret_dir(workspace_slug: str) -> Path:
+    return SECRETS_DIR / workspace_slug
+
+
+def workspace_secret_env_path(workspace_slug: str) -> Path:
+    return workspace_secret_dir(workspace_slug) / ".env"
+
+
+def container_workspace_secret_env_path(workspace_slug: str) -> str:
+    return f"{WORKSPACES_SECRETS_DIR}/{workspace_slug}/.env"
+
+
 def workspace_key_dir(workspace_slug: str) -> Path:
     return WORKSPACE_SSH_KEYS_DIR / workspace_slug
 
@@ -132,6 +147,7 @@ def active_nginx_config_path(workspace_slug: str) -> Path:
 def assert_workspace_state_clean(workspace_slug: str) -> None:
     paths_to_check = [
         workspace_repo_dir(workspace_slug),
+        workspace_secret_dir(workspace_slug),
         workspace_key_dir(workspace_slug),
         staged_supervisor_config_path(workspace_slug),
         staged_nginx_config_path(workspace_slug),
@@ -164,6 +180,64 @@ def ensure_workspace_keypair(ctx: Context, workspace_slug: str) -> tuple[Path, P
     return private_key, public_key
 
 
+def ensure_workspace_secret_root() -> None:
+    SECRETS_DIR.mkdir(parents=True, exist_ok=True)
+    SECRETS_DIR.chmod(0o711)
+
+
+def render_workspace_secret_env(workspace_slug: str, postgres_password: str) -> str:
+    return "\n".join([
+        f"POSTGRES_DB={workspace_slug}",
+        f"POSTGRES_USER={workspace_slug}",
+        f"POSTGRES_PASSWORD={postgres_password}",
+        "POSTGRES_HOST=postgres",
+        "POSTGRES_PORT=5432",
+        "",
+    ])
+
+
+def read_workspace_secret_environment(workspace_slug: str) -> dict[str, str]:
+    secret_path = workspace_secret_env_path(workspace_slug)
+    if not secret_path.exists():
+        raise RuntimeError(f"Workspace '{workspace_slug}' is missing its secret file at {secret_path}")
+
+    environment: dict[str, str] = {}
+    for line in secret_path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, separator, value = stripped.partition("=")
+        if not separator:
+            raise RuntimeError(f"Malformed workspace secret line in {secret_path}: {line}")
+        environment[key] = value
+
+    return environment
+
+
+def ensure_workspace_secret_file(ctx: Context, workspace_slug: str) -> Path:
+    ensure_workspace_secret_root()
+
+    secret_dir = workspace_secret_dir(workspace_slug)
+    secret_path = workspace_secret_env_path(workspace_slug)
+    if secret_path.exists():
+        raise RuntimeError(f"Refusing to overwrite existing workspace secret file at {secret_path}")
+
+    secret_dir.mkdir(parents=True, exist_ok=False)
+    secret_dir.chmod(0o700)
+    write_text_file(secret_path, render_workspace_secret_env(workspace_slug, token_urlsafe(32)))
+    secret_path.chmod(0o600)
+
+    quoted_dir = quote(f"{WORKSPACES_SECRETS_DIR}/{workspace_slug}")
+    docker_exec(
+        ctx,
+        f"test -f {quote(container_workspace_secret_env_path(workspace_slug))}"
+        f" && chown -R root:{quote(workspace_slug)} {quoted_dir}"
+        f" && chmod 750 {quoted_dir}"
+        f" && chmod 640 {quote(container_workspace_secret_env_path(workspace_slug))}",
+    )
+    return secret_path
+
+
 def ensure_workspaces_container(ctx: Context) -> None:
     ensure_ssh_host_keys(ctx)
     ctx.run("docker compose --profile workspaces up -d workspaces", echo=True)
@@ -178,12 +252,20 @@ def docker_exec(ctx: Context, script: str, *, user: str | None = None, hide: boo
 def assert_container_workspace_absent(ctx: Context, workspace_slug: str) -> None:
     result = docker_exec(ctx, f"id -u {quote(workspace_slug)}", hide=True, warn=True)
     if result.ok:
-        raise RuntimeError(f"Refusing to create workspace because user '{workspace_slug}' already exists in workspaces")
+        raise RuntimeError(
+            f"Refusing to create workspace because user '{workspace_slug}' already exists in workspaces"
+        )
 
-    ssh_key_result = docker_exec(ctx, f"test ! -e /etc/ssh/authorized_keys/{quote(workspace_slug)}", hide=True, warn=True)
+    ssh_key_result = docker_exec(
+        ctx,
+        f"test ! -e /etc/ssh/authorized_keys/{quote(workspace_slug)}",
+        hide=True,
+        warn=True,
+    )
     if not ssh_key_result.ok:
         raise RuntimeError(
-            f"Refusing to create workspace because /etc/ssh/authorized_keys/{workspace_slug} already exists in workspaces"
+            "Refusing to create workspace because "
+            f"/etc/ssh/authorized_keys/{workspace_slug} already exists in workspaces"
         )
 
 

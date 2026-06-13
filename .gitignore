@@ -4,6 +4,7 @@
 
 # Ignore sensitive files everywhere
 .env
+workspaces/src/secrets/
 
 #######################
 # Python
