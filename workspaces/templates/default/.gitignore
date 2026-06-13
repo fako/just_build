@@ -5,6 +5,7 @@
 .profile
 .lesshst
 .viminfo
+.psql_history
 
 # IDE exclusions
 .cache/

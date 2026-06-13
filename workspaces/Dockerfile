@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     supervisor \
     curl \
     ripgrep \
+    postgresql-client \
     less vim build-essential gettext \
     openssh-server \
     && rm -rf /var/lib/apt/lists/*

@@ -112,8 +112,16 @@ def workspace_secret_env_path(workspace_slug: str) -> Path:
     return workspace_secret_dir(workspace_slug) / ".env"
 
 
+def workspace_pgpass_path(workspace_slug: str) -> Path:
+    return workspace_secret_dir(workspace_slug) / ".pgpass"
+
+
 def container_workspace_secret_env_path(workspace_slug: str) -> str:
     return f"{WORKSPACES_SECRETS_DIR}/{workspace_slug}/.env"
+
+
+def container_workspace_pgpass_path(workspace_slug: str) -> str:
+    return f"{WORKSPACES_SECRETS_DIR}/{workspace_slug}/.pgpass"
 
 
 def workspace_key_dir(workspace_slug: str) -> Path:
@@ -186,12 +194,36 @@ def ensure_workspace_secret_root() -> None:
 
 
 def render_workspace_secret_env(workspace_slug: str, postgres_password: str) -> str:
+    pgpass_path = container_workspace_pgpass_path(workspace_slug)
     return "\n".join([
         f"POSTGRES_DB={workspace_slug}",
         f"POSTGRES_USER={workspace_slug}",
         f"POSTGRES_PASSWORD={postgres_password}",
         "POSTGRES_HOST=postgres",
         "POSTGRES_PORT=5432",
+        f"PGDATABASE={workspace_slug}",
+        f"PGUSER={workspace_slug}",
+        "PGHOST=postgres",
+        "PGPORT=5432",
+        f"PGPASSFILE={pgpass_path}",
+        "",
+    ])
+
+
+def render_workspace_pgpass(workspace_slug: str, postgres_password: str) -> str:
+    return f"postgres:5432:{workspace_slug}:{workspace_slug}:{postgres_password}\n"
+
+
+def render_workspace_shell_environment(workspace_slug: str) -> str:
+    secret_path = container_workspace_secret_env_path(workspace_slug)
+    return "\n".join([
+        "# >>> just-build workspace secrets >>>",
+        f'if [ -f "{secret_path}" ]; then',
+        "    set -a",
+        f'    . "{secret_path}"',
+        "    set +a",
+        "fi",
+        "# <<< just-build workspace secrets <<<",
         "",
     ])
 
@@ -219,23 +251,46 @@ def ensure_workspace_secret_file(ctx: Context, workspace_slug: str) -> Path:
 
     secret_dir = workspace_secret_dir(workspace_slug)
     secret_path = workspace_secret_env_path(workspace_slug)
+    pgpass_path = workspace_pgpass_path(workspace_slug)
     if secret_path.exists():
         raise RuntimeError(f"Refusing to overwrite existing workspace secret file at {secret_path}")
+    if pgpass_path.exists():
+        raise RuntimeError(f"Refusing to overwrite existing workspace pgpass file at {pgpass_path}")
 
     secret_dir.mkdir(parents=True, exist_ok=False)
     secret_dir.chmod(0o700)
-    write_text_file(secret_path, render_workspace_secret_env(workspace_slug, token_urlsafe(32)))
+    postgres_password = token_urlsafe(32)
+    write_text_file(secret_path, render_workspace_secret_env(workspace_slug, postgres_password))
+    write_text_file(pgpass_path, render_workspace_pgpass(workspace_slug, postgres_password))
     secret_path.chmod(0o600)
+    pgpass_path.chmod(0o600)
 
     quoted_dir = quote(f"{WORKSPACES_SECRETS_DIR}/{workspace_slug}")
+    quoted_owner = f"{quote(workspace_slug)}:{quote(workspace_slug)}"
+    quoted_pgpass = quote(container_workspace_pgpass_path(workspace_slug))
     docker_exec(
         ctx,
         f"test -f {quote(container_workspace_secret_env_path(workspace_slug))}"
         f" && chown -R root:{quote(workspace_slug)} {quoted_dir}"
         f" && chmod 750 {quoted_dir}"
-        f" && chmod 640 {quote(container_workspace_secret_env_path(workspace_slug))}",
+        f" && chmod 640 {quote(container_workspace_secret_env_path(workspace_slug))}"
+        f" && chown {quoted_owner} {quoted_pgpass}"
+        f" && chmod 600 {quoted_pgpass}",
     )
     return secret_path
+
+
+def install_workspace_shell_environment(ctx: Context, workspace_slug: str) -> None:
+    quoted_slug = quote(workspace_slug)
+    quoted_content = quote(render_workspace_shell_environment(workspace_slug))
+    for name in (".profile", ".bashrc"):
+        path = quote(f"/home/{workspace_slug}/{name}")
+        docker_exec(
+            ctx,
+            f"printf '%s' {quoted_content} > {path}"
+            f" && chown {quoted_slug}:{quoted_slug} {path}"
+            f" && chmod 644 {path}",
+        )
 
 
 def ensure_workspaces_container(ctx: Context) -> None:
