@@ -15,4 +15,9 @@
 
 # Python exclusions
 __pycache__
-venv
+venv/
+*.egg-info/
+
+# Local runtime state
+.env
+data/

@@ -222,4 +222,4 @@ def init(ctx, workspace_slug: str, templates: str = "default"):
     print(f"Initialized workspace {workspace.name} ({workspace.slug}) over SSH.")
     print(f"Templates resolved: {', '.join(template_names)}")
     print("Next step:")
-    print(f"  invoke workspaces.enable --workspace-slug={workspace.slug}")
+    print(f"  invoke workspaces.update --workspace-slug={workspace.slug}")

@@ -6,7 +6,7 @@
 #   DJANGO_MODULE - e.g., web
 
 [program:PROJECT_NAME]
-command=uvicorn ASGI_MODULE:application --host 127.0.0.1 --port PROJECT_PORT --workers 2 --loop uvloop --http httptools
+command=/home/PROJECT_NAME/venv/bin/python -m uvicorn ASGI_MODULE:application --host 127.0.0.1 --port PROJECT_PORT --workers 2 --loop uvloop --http httptools
 directory=/home/PROJECT_NAME
 user=PROJECT_NAME
 autostart=true

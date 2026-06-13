@@ -23,7 +23,16 @@ def enable(ctx, workspace_slug: str):
     workspace = get_workspace(workspace_slug)
     require_setup_steps(
         workspace,
-        ("workspace_created", "home_created", "ssh_access", "config_staged", "git_initialized", "django_initialized", "initial_commit"),
+        (
+            "workspace_created",
+            "home_created",
+            "ssh_access",
+            "config_staged",
+            "git_initialized",
+            "django_initialized",
+            "initial_commit",
+            "dependencies_updated",
+        ),
     )
 
     staged_supervisor = staged_supervisor_config_path(workspace.slug)
