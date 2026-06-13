@@ -1,14 +1,17 @@
 from pathlib import Path
 from shlex import quote
+from tempfile import NamedTemporaryFile
 
 from invoke.tasks import task
+from jinja2 import Environment, StrictUndefined
 
-from workspaces.cli.client import get_workspace
+from workspaces.cli.client import WorkspaceRecord, get_workspace
 from workspaces.cli.common import build_ssh_connection, log_setup_step, require_setup_steps
 from workspaces.cli.constants import TEMPLATES_DIR
 
 
 DEFAULT_TEMPLATES = ("default",)
+TEMPLATE_ENV = Environment(autoescape=False, keep_trailing_newline=True, undefined=StrictUndefined)
 
 
 def ensure_git_repo(conn, repo_dir: str, workspace_name: str, workspace_slug: str) -> None:
@@ -63,25 +66,78 @@ def remote_template_path(repo_dir: str, relative_path: Path) -> str:
     return f"{repo_dir}/{relative_path.as_posix()}"
 
 
-def copy_template_files(conn, repo_dir: str, template_name: str) -> None:
+def ensure_remote_template_dir(conn, repo_dir: str, relative_dir: Path) -> None:
+    if relative_dir == Path("."):
+        return
+
+    remote_dir = f"{repo_dir}/{relative_dir.as_posix()}"
+    conn.run(f"test -d {quote(remote_dir)} || mkdir -p {quote(remote_dir)}", echo=True)
+
+
+def template_output_path(relative_path: Path) -> Path:
+    suffixes = relative_path.suffixes
+    if len(suffixes) < 2 or suffixes[-2] != ".tpl":
+        return relative_path
+
+    template_suffix = "".join(suffixes[-2:])
+    output_name = f"{relative_path.name[:-len(template_suffix)]}{suffixes[-1]}"
+    return relative_path.with_name(output_name)
+
+
+def template_context(workspace: WorkspaceRecord) -> dict[str, object]:
+    context: dict[str, object] = workspace.model_dump()
+    context["workspace"] = workspace
+    return context
+
+
+def render_template_file(local_path: Path, workspace: WorkspaceRecord) -> str:
+    template = TEMPLATE_ENV.from_string(local_path.read_text(encoding="utf-8"))
+    return template.render(template_context(workspace))
+
+
+def put_rendered_template_file(conn, repo_dir: str, local_path: Path, remote_path: Path,
+                               workspace: WorkspaceRecord) -> None:
+    rendered = render_template_file(local_path, workspace)
+    temp_path: Path | None = None
+    try:
+        with NamedTemporaryFile("w", encoding="utf-8", delete=False) as temp_file:
+            temp_file.write(rendered)
+            rendered_path = Path(temp_file.name)
+
+        temp_path = rendered_path
+        rendered_path.chmod(local_path.stat().st_mode & 0o777)
+        conn.put(str(rendered_path), remote=remote_template_path(repo_dir, remote_path))
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def copy_template_files(conn, repo_dir: str, template_name: str, workspace: WorkspaceRecord) -> None:
     source_dir = template_dir(template_name)
-    files = sorted(path for path in source_dir.rglob("*") if path.is_file())
-    remote_dirs = sorted({path.relative_to(source_dir).parent for path in files})
 
-    for relative_dir in remote_dirs:
-        remote_dir = repo_dir if relative_dir == Path(".") else f"{repo_dir}/{relative_dir.as_posix()}"
-        conn.run(f"mkdir -p {quote(remote_dir)}", echo=True)
-
-    for local_path in files:
+    for local_path in sorted(source_dir.rglob("*")):
         relative_path = local_path.relative_to(source_dir)
-        conn.put(str(local_path), remote=remote_template_path(repo_dir, relative_path))
+        if local_path.is_dir():
+            ensure_remote_template_dir(conn, repo_dir, relative_path)
+            continue
+
+        if not local_path.is_file():
+            continue
+
+        remote_path = template_output_path(relative_path)
+        ensure_remote_template_dir(conn, repo_dir, remote_path.parent)
+        if remote_path == relative_path:
+            conn.put(str(local_path), remote=remote_template_path(repo_dir, remote_path))
+        else:
+            put_rendered_template_file(conn, repo_dir, local_path, remote_path, workspace)
 
 
-def copy_workspace_templates(conn, repo_dir: str, templates: list[str] | tuple[str, ...] | str | None) -> tuple[str, ...]:
+def copy_workspace_templates(conn, repo_dir: str, templates: list[str] | tuple[str, ...] | str | None,
+                             workspace: WorkspaceRecord) -> tuple[str, ...]:
     template_names = normalize_template_names(templates)
     for template_name in template_names:
         print(f"Applying workspace template: {template_name}")
-        copy_template_files(conn, repo_dir, template_name)
+        copy_template_files(conn, repo_dir, template_name, workspace)
 
     return template_names
 
@@ -121,7 +177,7 @@ def init(ctx, workspace_slug: str, templates: str = "default"):
     if django_initialized:
         log_setup_step(workspace.slug, "django_initialized")
 
-    template_names = copy_workspace_templates(conn, repo_dir, templates)
+    template_names = copy_workspace_templates(conn, repo_dir, templates, workspace)
     log_setup_step(workspace.slug, "templates_resolved")
 
     initial_commit = ensure_initial_commit(conn, repo_dir)
