@@ -1,0 +1,38 @@
+@baseUrl = http://127.0.0.1:8000
+@workspaceSlug = acme
+
+### Create a workspace
+POST {{baseUrl}}/api/v1/workspaces/
+Content-Type: application/json
+
+{
+  "name": "Acme",
+  "slug": "acme",
+  "django_module": "web"
+}
+
+### List workspaces
+GET {{baseUrl}}/api/v1/workspaces/
+
+### Get one workspace
+GET {{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/
+
+### Patch workspace setup and SSH metadata
+PATCH {{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/
+Content-Type: application/json
+
+{
+  "setup": {
+    "ssh_access": "2026-03-25T11:00:00Z"
+  },
+  "ssh": {
+    "alias": "acme-workspace",
+    "user": "acme",
+    "host": "localhost",
+    "port": 2222,
+    "identity_file": "workspaces/ssh/keys/src/acme/id_ed25519"
+  }
+}
+
+### Render aggregate SSH config
+GET {{baseUrl}}/api/v1/workspaces/ssh-config/

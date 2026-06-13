@@ -1,4 +1,4 @@
-from invoke import task
+from invoke.tasks import task
 
 from workspaces.cli.constants import SSH_KEYS_DIR
 

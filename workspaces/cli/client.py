@@ -11,7 +11,7 @@ class ManagementClientError(RuntimeError):
     pass
 
 
-class ProjectRecord(BaseModel):
+class WorkspaceRecord(BaseModel):
     id: str
     name: str
     slug: str
@@ -28,42 +28,42 @@ class ProjectRecord(BaseModel):
     ssh: SSHConfig
 
 
-def _project_url(project_slug: str) -> str:
-    return f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/projects/{project_slug}/"
+def _workspace_url(workspace_slug: str) -> str:
+    return f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/workspaces/{workspace_slug}/"
 
 
-def create_project(name: str, slug: str, django_module: str = "web") -> ProjectRecord:
+def create_workspace(name: str, slug: str, django_module: str = "web") -> WorkspaceRecord:
     try:
         response = requests.post(
-            f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/projects/",
+            f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/workspaces/",
             json={"name": name, "slug": slug, "django_module": django_module},
             timeout=10,
         )
     except requests.RequestException as exc:
-        raise ManagementClientError(f"Could not create project '{slug}': {exc}") from exc
+        raise ManagementClientError(f"Could not create workspace '{slug}': {exc}") from exc
 
     if response.status_code == 409:
-        raise ManagementClientError(f"Project '{slug}' already exists.")
+        raise ManagementClientError(f"Workspace '{slug}' already exists.")
 
     try:
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise ManagementClientError(f"Could not create project '{slug}': {exc}") from exc
+        raise ManagementClientError(f"Could not create workspace '{slug}': {exc}") from exc
 
-    return ProjectRecord.model_validate(response.json())
+    return WorkspaceRecord.model_validate(response.json())
 
 
-def get_project(project_slug: str) -> ProjectRecord:
+def get_workspace(workspace_slug: str) -> WorkspaceRecord:
     try:
-        response = requests.get(_project_url(project_slug), timeout=10)
+        response = requests.get(_workspace_url(workspace_slug), timeout=10)
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise ManagementClientError(f"Could not fetch project '{project_slug}': {exc}") from exc
-    return ProjectRecord.model_validate(response.json())
+        raise ManagementClientError(f"Could not fetch workspace '{workspace_slug}': {exc}") from exc
+    return WorkspaceRecord.model_validate(response.json())
 
 
-def patch_project(project_slug: str, *, setup: dict[str, str] | None = None,
-                  ssh: dict[str, str | int] | None = None) -> ProjectRecord:
+def patch_workspace(workspace_slug: str, *, setup: dict[str, str] | None = None,
+                    ssh: dict[str, str | int] | None = None) -> WorkspaceRecord:
     payload: dict[str, object] = {}
     if setup:
         payload["setup"] = setup
@@ -71,15 +71,15 @@ def patch_project(project_slug: str, *, setup: dict[str, str] | None = None,
         payload["ssh"] = ssh
 
     try:
-        response = requests.patch(_project_url(project_slug), json=payload, timeout=10)
+        response = requests.patch(_workspace_url(workspace_slug), json=payload, timeout=10)
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise ManagementClientError(f"Could not update project '{project_slug}': {exc}") from exc
-    return ProjectRecord.model_validate(response.json())
+        raise ManagementClientError(f"Could not update workspace '{workspace_slug}': {exc}") from exc
+    return WorkspaceRecord.model_validate(response.json())
 
 
 def get_ssh_config() -> str:
-    url = f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/projects/ssh-config/"
+    url = f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/workspaces/ssh-config/"
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()

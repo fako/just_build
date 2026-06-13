@@ -2,7 +2,9 @@ import getpass
 import os
 from pathlib import Path
 
-from invoke import task, Context, Collection
+from invoke.collection import Collection
+from invoke.context import Context
+from invoke.tasks import task
 from invoke.watchers import Responder, FailingResponder
 
 from management.credentials.tests.pass_helpers.helpers import setup_test_store

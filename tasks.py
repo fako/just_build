@@ -1,4 +1,4 @@
-from invoke import Collection
+from invoke.collection import Collection
 
 from management import cli as management_cli
 from workspaces import cli as workspaces_cli

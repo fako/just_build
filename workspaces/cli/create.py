@@ -1,68 +1,68 @@
-from invoke import task
+from invoke.tasks import task
 
-from workspaces.cli.client import create_project, patch_project
+from workspaces.cli.client import create_workspace, patch_workspace
 from workspaces.cli.common import (
     DEFAULT_HOST,
     DEFAULT_SSH_PORT,
-    assert_container_project_absent,
-    assert_project_workspace_clean,
+    assert_container_workspace_absent,
+    assert_workspace_state_clean,
     create_container_user_and_home,
-    ensure_project_keypair,
+    ensure_workspace_keypair,
     ensure_workspaces_container,
     log_setup_step,
-    project_private_key_path,
     publish_authorized_key,
     refresh_generated_ssh_config,
-    stage_project_configs,
+    stage_workspace_configs,
+    workspace_private_key_path,
 )
 from workspaces.cli.constants import WORKSPACES_DIR
 
 
 @task(
     help={
-        "name": "Human-friendly project name",
-        "slug": "Unique project slug and Linux username",
+        "name": "Human-friendly workspace name",
+        "slug": "Unique workspace slug and Linux username",
         "domain": "Domain for the staged nginx config, defaults to <slug>.localhost",
         "django_module": "Django project module name, defaults to web",
     }
 )
 def create(ctx, name: str, slug: str, domain: str | None = None, django_module: str = "web"):
-    """Create a workspace project, SSH access, and staged configs."""
+    """Create a workspace, SSH access, and staged configs."""
     domain = domain or f"{slug}.localhost"
 
-    assert_project_workspace_clean(slug)
+    assert_workspace_state_clean(slug)
     ensure_workspaces_container(ctx)
-    assert_container_project_absent(ctx, slug)
+    assert_container_workspace_absent(ctx, slug)
 
-    project = create_project(name=name, slug=slug, django_module=django_module)
-    log_setup_step(project.slug, "project_created")
+    workspace = create_workspace(name=name, slug=slug, django_module=django_module)
+    log_setup_step(workspace.slug, "workspace_created")
 
-    create_container_user_and_home(ctx, project.slug)
-    log_setup_step(project.slug, "home_created")
+    create_container_user_and_home(ctx, workspace.slug)
+    log_setup_step(workspace.slug, "home_created")
 
-    private_key, public_key = ensure_project_keypair(ctx, project.slug)
-    publish_authorized_key(ctx, project.slug, public_key.read_text().strip())
+    private_key, public_key = ensure_workspace_keypair(ctx, workspace.slug)
+    publish_authorized_key(ctx, workspace.slug, public_key.read_text().strip())
 
-    patch_project(
-        project.slug,
+    patch_workspace(
+        workspace.slug,
         ssh={
-            "alias": f"{project.slug}-workspace",
-            "user": project.slug,
+            "alias": f"{workspace.slug}-workspace",
+            "user": workspace.slug,
             "host": DEFAULT_HOST,
             "port": DEFAULT_SSH_PORT,
-            "identity_file": str(project_private_key_path(project.slug).relative_to(WORKSPACES_DIR.parent)),
+            "identity_file": str(workspace_private_key_path(workspace.slug).relative_to(WORKSPACES_DIR.parent)),
         },
     )
-    log_setup_step(project.slug, "ssh_access")
+    log_setup_step(workspace.slug, "ssh_access")
 
-    stage_project_configs(project, domain)
-    log_setup_step(project.slug, "config_staged")
+    stage_workspace_configs(workspace, domain)
+    log_setup_step(workspace.slug, "config_staged")
 
     refresh_generated_ssh_config()
-    log_setup_step(project.slug, "ssh_config")
+    log_setup_step(workspace.slug, "ssh_config")
 
     print("")
-    print(f"Created workspace project {project.name} ({project.slug}).")
+    print(f"Created workspace {workspace.name} ({workspace.slug}).")
     print(f"SSH private key: {private_key}")
     print("Next step:")
-    print(f"  invoke workspaces.init --project-slug={project.slug}")
+    print(f"  invoke workspaces.init --workspace-slug={workspace.slug}")

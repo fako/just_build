@@ -1,18 +1,18 @@
 from shlex import quote
 
-from invoke import task
+from invoke.tasks import task
 
-from workspaces.cli.client import get_project
+from workspaces.cli.client import get_workspace
 from workspaces.cli.common import build_ssh_connection, log_setup_step, require_setup_steps
 
 
-def ensure_git_repo(conn, repo_dir: str, project_name: str, project_slug: str) -> None:
+def ensure_git_repo(conn, repo_dir: str, workspace_name: str, workspace_slug: str) -> None:
     result = conn.run(f"test -d {quote(repo_dir)}/.git", hide=True, warn=True)
     if not result.ok:
         conn.run(f"git init {quote(repo_dir)}", echo=True)
 
-    conn.run(f"git -C {quote(repo_dir)} config user.name {quote(project_name)}", echo=True)
-    conn.run(f"git -C {quote(repo_dir)} config user.email {quote(project_slug)}@workspace.local", echo=True)
+    conn.run(f"git -C {quote(repo_dir)} config user.name {quote(workspace_name)}", echo=True)
+    conn.run(f"git -C {quote(repo_dir)} config user.email {quote(workspace_slug)}@workspace.local", echo=True)
 
 
 def ensure_django_project(conn, repo_dir: str, django_module: str) -> bool:
@@ -42,27 +42,27 @@ def ensure_initial_commit(conn, repo_dir: str) -> bool:
     return True
 
 
-@task(help={"project_slug": "Existing project slug created by workspaces.create"})
-def init(ctx, project_slug: str):
-    """Initialize git and Django over SSH as the project user."""
-    project = get_project(project_slug)
-    require_setup_steps(project, ("project_created", "home_created", "ssh_access"))
+@task(help={"workspace_slug": "Existing workspace slug created by workspaces.create"})
+def init(ctx, workspace_slug: str):
+    """Initialize git and Django over SSH as the workspace user."""
+    workspace = get_workspace(workspace_slug)
+    require_setup_steps(workspace, ("workspace_created", "home_created", "ssh_access"))
 
-    repo_dir = f"/home/{project.slug}"
-    conn = build_ssh_connection(project)
+    repo_dir = f"/home/{workspace.slug}"
+    conn = build_ssh_connection(workspace)
 
-    ensure_git_repo(conn, repo_dir, project.name, project.slug)
-    log_setup_step(project.slug, "git_initialized")
+    ensure_git_repo(conn, repo_dir, workspace.name, workspace.slug)
+    log_setup_step(workspace.slug, "git_initialized")
 
-    django_initialized = ensure_django_project(conn, repo_dir, project.django_module)
+    django_initialized = ensure_django_project(conn, repo_dir, workspace.django_module)
     if django_initialized:
-        log_setup_step(project.slug, "django_initialized")
+        log_setup_step(workspace.slug, "django_initialized")
 
     initial_commit = ensure_initial_commit(conn, repo_dir)
     if initial_commit:
-        log_setup_step(project.slug, "initial_commit")
+        log_setup_step(workspace.slug, "initial_commit")
 
     print("")
-    print(f"Initialized project {project.name} ({project.slug}) over SSH.")
+    print(f"Initialized workspace {workspace.name} ({workspace.slug}) over SSH.")
     print("Next step:")
-    print(f"  invoke workspaces.enable --project-slug={project.slug}")
+    print(f"  invoke workspaces.enable --workspace-slug={workspace.slug}")

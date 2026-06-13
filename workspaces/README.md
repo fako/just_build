@@ -38,14 +38,14 @@ invoke workspaces.setup
 # Start the container
 docker compose --profile workspaces up --build
 
-# Create the project, SSH access, and staged configs
-invoke workspaces.create --name="My Project" --slug=myproject
+# Create the workspace, SSH access, and staged configs
+invoke workspaces.create --name="My Workspace" --slug=myworkspace
 
-# Initialize git and Django over SSH as the project user
-invoke workspaces.init --project-slug=myproject
+# Initialize git and Django over SSH as the workspace user
+invoke workspaces.init --workspace-slug=myworkspace
 
 # Enable the staged configs after initialization
-invoke workspaces.enable --project-slug=myproject
+invoke workspaces.enable --workspace-slug=myworkspace
 ```
 
 ## Directory Structure
@@ -63,11 +63,11 @@ workspaces/
 │   ├── sshd_config          # SSH daemon config (port 22 → 2222)
 │   ├── config               # Generated SSH config include file
 │   └── keys/                # Container host keys (private gitignored)
-└── projects/
-    ├── nginx/               # Project nginx configs (gitignored)
+└── src/
+    ├── nginx/               # Workspace nginx configs (gitignored)
     ├── staged/              # Staged configs waiting to be enabled
-    ├── supervisor/          # Project supervisor configs (gitignored)
-    └── repos/               # Project git repositories → /home/
+    ├── supervisor/          # Workspace supervisor configs (gitignored)
+    └── repos/               # Workspace git repositories → /home/
 ```
 
 ## Project Onboarding
@@ -77,13 +77,13 @@ workspaces/
 For the common SSH-first workflow, use:
 
 ```bash
-invoke workspaces.create --name="My Project" --slug=myproject
-invoke workspaces.init --project-slug=myproject
-invoke workspaces.enable --project-slug=myproject
+invoke workspaces.create --name="My Workspace" --slug=myworkspace
+invoke workspaces.init --workspace-slug=myworkspace
+invoke workspaces.enable --workspace-slug=myworkspace
 ```
 
 The commands do the following:
-- `workspaces.create` creates the management project, creates the Linux user and home directory, generates SSH access, stages nginx and supervisor configs, and refreshes `workspaces/ssh/config`
+- `workspaces.create` creates the management workspace, creates the Linux user and home directory, generates SSH access, stages nginx and supervisor configs, and refreshes `workspaces/ssh/config`
 - `workspaces.init` connects over SSH as the project user, initializes git, runs `django-admin startproject <django_module> .`, and creates the initial commit
 - `workspaces.enable` activates the staged configs and reloads supervisor and nginx
 
@@ -144,12 +144,12 @@ docker exec workspaces useradd -m -s /bin/bash myproject
 
 The workspaces container exposes SSH on port 2222 for remote development with Cursor or other editors. To enable SSH access for a project user:
 
-Run `invoke workspaces.create --name="My Project" --slug=myproject` to generate a project SSH keypair and publish
+Run `invoke workspaces.create --name="My Workspace" --slug=myworkspace` to generate a workspace SSH keypair and publish
 the public key into the container-managed `authorized_keys` volume automatically.
 
 The container uses an internal Docker volume for `/etc/ssh/authorized_keys/`, and sshd is configured to look for
 `/etc/ssh/authorized_keys/%u` (where `%u` is the username). The private key remains on the host under
-`workspaces/ssh/keys/projects/<project-slug>/` so Cursor, Fabric, and local SSH tooling can use it.
+`workspaces/ssh/keys/src/<project-slug>/` so Cursor, Fabric, and local SSH tooling can use it.
 
 The generated public key is published inside the container by `workspaces.create`, and the Python CLI expects the
 `/etc/ssh/authorized_keys` directory permissions to come from the image/container environment rather than fixing
@@ -158,7 +158,7 @@ them at runtime.
 You can test access directly with:
 
 ```bash
-ssh -i workspaces/ssh/keys/projects/myproject/id_ed25519 myproject@localhost -p 2222
+ssh -i workspaces/ssh/keys/src/myproject/id_ed25519 myproject@localhost -p 2222
 ```
 
 **Connecting with Cursor Remote SSH**
@@ -189,18 +189,18 @@ Host myproject-workspace
     HostName localhost
     Port 2222
     User myproject
-    IdentityFile /absolute/path/to/just_build/workspaces/ssh/keys/projects/myproject/id_ed25519
+    IdentityFile /absolute/path/to/just_build/workspaces/ssh/keys/src/myproject/id_ed25519
 ```
 
 ### 4. Initialize Project Repository
 
-The project home lives under `workspaces/projects/repos/<project-slug>/` and is mounted to `/home/<project-slug>/`
+The project home lives under `workspaces/src/repos/<project-slug>/` and is mounted to `/home/<project-slug>/`
 inside the container.
 
 Initialize it over SSH as the project user with:
 
 ```bash
-invoke workspaces.init --project-slug=myproject
+invoke workspaces.init --workspace-slug=myworkspace
 ```
 
 This command initializes git, sets local commit identity, runs `django-admin startproject <django_module> .`,
@@ -283,7 +283,7 @@ server {
 After `workspaces.init` has finished successfully, activate the staged configs with:
 
 ```bash
-invoke workspaces.enable --project-slug=myproject
+invoke workspaces.enable --workspace-slug=myworkspace
 ```
 
 ### 8. Local DNS Setup
@@ -395,6 +395,6 @@ DATABASES = {
 
 ### Project Not Discovered
 
-- Ensure supervisor config is in `projects/supervisor/` with `.conf` extension
+- Ensure supervisor config is in `src/supervisor/` with `.conf` extension
 - Run `supervisorctl reread && supervisorctl update`
 - Check for syntax errors: `supervisorctl reread` will report them

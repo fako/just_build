@@ -1,4 +1,4 @@
-from invoke import Collection
+from invoke.collection import Collection
 
 from workspaces.cli.create import create
 from workspaces.cli.enable import enable

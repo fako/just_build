@@ -1,10 +1,10 @@
 from django.contrib import admin
 
-from access_control.models import Project
+from access_control.models import Workspace
 
 
-@admin.register(Project)
-class ProjectAdmin(admin.ModelAdmin):
+@admin.register(Workspace)
+class WorkspaceAdmin(admin.ModelAdmin):
     list_display = ("name", "slug")
     search_fields = ("name", "slug")
     readonly_fields = ("id",)

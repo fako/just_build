@@ -5,15 +5,15 @@ from pathlib import Path
 from shlex import quote
 
 from fabric import Connection
-from invoke import Context
+from invoke.context import Context
 
-from workspaces.cli.client import ProjectRecord, get_ssh_config, patch_project
+from workspaces.cli.client import WorkspaceRecord, get_ssh_config, patch_workspace
 from workspaces.cli.constants import (
     ACTIVE_NGINX_DIR,
     ACTIVE_SUPERVISOR_DIR,
     NGINX_TEMPLATE_PATH,
-    PROJECT_REPOS_DIR,
-    PROJECT_SSH_KEYS_DIR,
+    REPOS_DIR,
+    WORKSPACE_SSH_KEYS_DIR,
     SSH_CONFIG_PATH,
     STAGED_NGINX_DIR,
     STAGED_SUPERVISOR_DIR,
@@ -50,7 +50,7 @@ def publish_staged_file(staged_path: Path, active_path: Path) -> None:
     write_text_file(active_path, staged_path.read_text())
 
 
-def extract_project_port(config_path: Path) -> int | None:
+def extract_workspace_port(config_path: Path) -> int | None:
     if not config_path.exists():
         return None
 
@@ -64,20 +64,20 @@ def extract_project_port(config_path: Path) -> int | None:
     return None
 
 
-def next_project_port(project_slug: str) -> int:
+def next_workspace_port(workspace_slug: str) -> int:
     config_paths = [
-        ACTIVE_SUPERVISOR_DIR / f"{project_slug}.conf",
-        STAGED_SUPERVISOR_DIR / f"{project_slug}.conf",
+        ACTIVE_SUPERVISOR_DIR / f"{workspace_slug}.conf",
+        STAGED_SUPERVISOR_DIR / f"{workspace_slug}.conf",
     ]
     for config_path in config_paths:
-        existing_port = extract_project_port(config_path)
+        existing_port = extract_workspace_port(config_path)
         if existing_port is not None:
             return existing_port
 
     ports: set[int] = set()
     for directory in (ACTIVE_SUPERVISOR_DIR, STAGED_SUPERVISOR_DIR):
         for config_path in directory.glob("*.conf"):
-            port = extract_project_port(config_path)
+            port = extract_workspace_port(config_path)
             if port is not None:
                 ports.add(port)
 
@@ -87,76 +87,76 @@ def next_project_port(project_slug: str) -> int:
     return port
 
 
-def parse_project_domain(config_path: Path) -> str:
+def parse_workspace_domain(config_path: Path) -> str:
     for line in config_path.read_text().splitlines():
         stripped = line.strip()
         if stripped.startswith("server_name "):
             return stripped.removeprefix("server_name ").rstrip(";")
-    raise RuntimeError(f"Could not determine project domain from {config_path}")
+    raise RuntimeError(f"Could not determine workspace domain from {config_path}")
 
 
-def project_repo_dir(project_slug: str) -> Path:
-    return PROJECT_REPOS_DIR / project_slug
+def workspace_repo_dir(workspace_slug: str) -> Path:
+    return REPOS_DIR / workspace_slug
 
 
-def project_key_dir(project_slug: str) -> Path:
-    return PROJECT_SSH_KEYS_DIR / project_slug
+def workspace_key_dir(workspace_slug: str) -> Path:
+    return WORKSPACE_SSH_KEYS_DIR / workspace_slug
 
 
-def project_private_key_path(project_slug: str) -> Path:
-    return project_key_dir(project_slug) / "id_ed25519"
+def workspace_private_key_path(workspace_slug: str) -> Path:
+    return workspace_key_dir(workspace_slug) / "id_ed25519"
 
 
-def project_public_key_path(project_slug: str) -> Path:
-    return project_key_dir(project_slug) / "id_ed25519.pub"
+def workspace_public_key_path(workspace_slug: str) -> Path:
+    return workspace_key_dir(workspace_slug) / "id_ed25519.pub"
 
 
-def staged_supervisor_config_path(project_slug: str) -> Path:
-    return STAGED_SUPERVISOR_DIR / f"{project_slug}.conf"
+def staged_supervisor_config_path(workspace_slug: str) -> Path:
+    return STAGED_SUPERVISOR_DIR / f"{workspace_slug}.conf"
 
 
-def staged_nginx_config_path(project_slug: str) -> Path:
-    return STAGED_NGINX_DIR / f"{project_slug}.conf"
+def staged_nginx_config_path(workspace_slug: str) -> Path:
+    return STAGED_NGINX_DIR / f"{workspace_slug}.conf"
 
 
-def active_supervisor_config_path(project_slug: str) -> Path:
-    return ACTIVE_SUPERVISOR_DIR / f"{project_slug}.conf"
+def active_supervisor_config_path(workspace_slug: str) -> Path:
+    return ACTIVE_SUPERVISOR_DIR / f"{workspace_slug}.conf"
 
 
-def active_nginx_config_path(project_slug: str) -> Path:
-    return ACTIVE_NGINX_DIR / f"{project_slug}.conf"
+def active_nginx_config_path(workspace_slug: str) -> Path:
+    return ACTIVE_NGINX_DIR / f"{workspace_slug}.conf"
 
 
-def assert_project_workspace_clean(project_slug: str) -> None:
+def assert_workspace_state_clean(workspace_slug: str) -> None:
     paths_to_check = [
-        project_repo_dir(project_slug),
-        project_key_dir(project_slug),
-        staged_supervisor_config_path(project_slug),
-        staged_nginx_config_path(project_slug),
-        active_supervisor_config_path(project_slug),
-        active_nginx_config_path(project_slug),
+        workspace_repo_dir(workspace_slug),
+        workspace_key_dir(workspace_slug),
+        staged_supervisor_config_path(workspace_slug),
+        staged_nginx_config_path(workspace_slug),
+        active_supervisor_config_path(workspace_slug),
+        active_nginx_config_path(workspace_slug),
     ]
 
     dirty_paths = [path for path in paths_to_check if path.exists()]
     if dirty_paths:
         raise RuntimeError(
-            "Refusing to create project because workspace state is not clean:\n"
+            "Refusing to create workspace because workspace state is not clean:\n"
             + "\n".join(f"- {path}" for path in dirty_paths)
         )
 
 
-def ensure_project_keypair(ctx: Context, project_slug: str) -> tuple[Path, Path]:
-    key_dir = project_key_dir(project_slug)
+def ensure_workspace_keypair(ctx: Context, workspace_slug: str) -> tuple[Path, Path]:
+    key_dir = workspace_key_dir(workspace_slug)
     key_dir.mkdir(parents=True, exist_ok=True)
 
-    private_key = project_private_key_path(project_slug)
-    public_key = project_public_key_path(project_slug)
+    private_key = workspace_private_key_path(workspace_slug)
+    public_key = workspace_public_key_path(workspace_slug)
 
     if private_key.exists() or public_key.exists():
         raise RuntimeError(f"Refusing to overwrite existing SSH keypair in {key_dir}")
 
     ctx.run(
-        f'ssh-keygen -t ed25519 -f "{private_key}" -N "" -C "{project_slug}@workspace.local"',
+        f'ssh-keygen -t ed25519 -f "{private_key}" -N "" -C "{workspace_slug}@workspace.local"',
         echo=True,
     )
     return private_key, public_key
@@ -173,25 +173,26 @@ def docker_exec(ctx: Context, script: str, *, user: str | None = None, hide: boo
     return ctx.run(command, echo=not hide, hide=hide, warn=warn)
 
 
-def assert_container_project_absent(ctx: Context, project_slug: str) -> None:
-    result = docker_exec(ctx, f"id -u {quote(project_slug)}", hide=True, warn=True)
+def assert_container_workspace_absent(ctx: Context, workspace_slug: str) -> None:
+    result = docker_exec(ctx, f"id -u {quote(workspace_slug)}", hide=True, warn=True)
     if result.ok:
-        raise RuntimeError(f"Refusing to create project because user '{project_slug}' already exists in workspaces")
+        raise RuntimeError(f"Refusing to create workspace because user '{workspace_slug}' already exists in workspaces")
 
-    ssh_key_result = docker_exec(ctx, f"test ! -e /etc/ssh/authorized_keys/{quote(project_slug)}", hide=True, warn=True)
+    ssh_key_result = docker_exec(ctx, f"test ! -e /etc/ssh/authorized_keys/{quote(workspace_slug)}", hide=True, warn=True)
     if not ssh_key_result.ok:
         raise RuntimeError(
-            f"Refusing to create project because /etc/ssh/authorized_keys/{project_slug} already exists in workspaces"
+            f"Refusing to create workspace because /etc/ssh/authorized_keys/{workspace_slug} already exists in workspaces"
         )
 
 
-def create_container_user_and_home(ctx: Context, project_slug: str) -> None:
-    docker_exec(ctx, f"useradd -m -s /bin/bash {quote(project_slug)}")
-    docker_exec(ctx, f"mkdir -p /home/{quote(project_slug)} && chown -R {quote(project_slug)}:{quote(project_slug)} /home/{quote(project_slug)}")
+def create_container_user_and_home(ctx: Context, workspace_slug: str) -> None:
+    quoted_slug = quote(workspace_slug)
+    docker_exec(ctx, f"useradd -m -s /bin/bash {quoted_slug}")
+    docker_exec(ctx, f"mkdir -p /home/{quoted_slug} && chown -R {quoted_slug}:{quoted_slug} /home/{quoted_slug}")
 
 
-def publish_authorized_key(ctx: Context, project_slug: str, public_key: str) -> None:
-    quoted_slug = quote(project_slug)
+def publish_authorized_key(ctx: Context, workspace_slug: str, public_key: str) -> None:
+    quoted_slug = quote(workspace_slug)
     quoted_key = quote(public_key)
 
     directory_state = docker_exec(
@@ -214,17 +215,17 @@ def publish_authorized_key(ctx: Context, project_slug: str, public_key: str) -> 
     )
 
 
-def stage_project_configs(project: ProjectRecord, domain: str) -> tuple[Path, Path]:
-    project_port = next_project_port(project.slug)
-    asgi_module = f"{project.django_module}.asgi"
+def stage_workspace_configs(workspace: WorkspaceRecord, domain: str) -> tuple[Path, Path]:
+    workspace_port = next_workspace_port(workspace.slug)
+    asgi_module = f"{workspace.django_module}.asgi"
 
     supervisor_config = render_template(
         SUPERVISOR_TEMPLATE_PATH,
         {
-            "PROJECT_NAME": project.slug,
-            "PROJECT_PORT": str(project_port),
+            "PROJECT_NAME": workspace.slug,
+            "PROJECT_PORT": str(workspace_port),
             "ASGI_MODULE": asgi_module,
-            "DJANGO_MODULE": project.django_module,
+            "DJANGO_MODULE": workspace.django_module,
         },
     )
     supervisor_config = "; Automatically generated by invoke workspaces.create.\n" + supervisor_config
@@ -232,22 +233,22 @@ def stage_project_configs(project: ProjectRecord, domain: str) -> tuple[Path, Pa
     nginx_config = render_template(
         NGINX_TEMPLATE_PATH,
         {
-            "PROJECT_NAME": project.slug,
-            "PROJECT_PORT": str(project_port),
+            "PROJECT_NAME": workspace.slug,
+            "PROJECT_PORT": str(workspace_port),
             "PROJECT_DOMAIN": domain,
         },
     )
     nginx_config = "# Automatically generated by invoke workspaces.create.\n" + nginx_config
 
-    supervisor_path = staged_supervisor_config_path(project.slug)
-    nginx_path = staged_nginx_config_path(project.slug)
+    supervisor_path = staged_supervisor_config_path(workspace.slug)
+    nginx_path = staged_nginx_config_path(workspace.slug)
     write_text_file(supervisor_path, supervisor_config)
     write_text_file(nginx_path, nginx_config)
     return supervisor_path, nginx_path
 
 
-def log_setup_step(project_slug: str, step: str) -> None:
-    patch_project(project_slug, setup={step: timestamp()})
+def log_setup_step(workspace_slug: str, step: str) -> None:
+    patch_workspace(workspace_slug, setup={step: timestamp()})
 
 
 def refresh_generated_ssh_config() -> None:
@@ -257,26 +258,26 @@ def refresh_generated_ssh_config() -> None:
     write_text_file(SSH_CONFIG_PATH, generated_config)
 
 
-def build_ssh_connection(project: ProjectRecord) -> Connection:
-    identity_file = project.ssh.identity_file
+def build_ssh_connection(workspace: WorkspaceRecord) -> Connection:
+    identity_file = workspace.ssh.identity_file
     if not identity_file:
-        raise RuntimeError(f"Project '{project.slug}' does not have SSH identity metadata yet.")
+        raise RuntimeError(f"Workspace '{workspace.slug}' does not have SSH identity metadata yet.")
 
     private_key = Path(identity_file)
     if not private_key.is_absolute():
         private_key = WORKSPACES_DIR.parent / private_key
 
     return Connection(
-        host=project.ssh.host or DEFAULT_HOST,
-        user=project.ssh.user or project.slug,
-        port=project.ssh.port or DEFAULT_SSH_PORT,
+        host=workspace.ssh.host or DEFAULT_HOST,
+        user=workspace.ssh.user or workspace.slug,
+        port=workspace.ssh.port or DEFAULT_SSH_PORT,
         connect_kwargs={"key_filename": [str(private_key)]},
     )
 
 
-def require_setup_steps(project: ProjectRecord, steps: tuple[str, ...]) -> None:
-    missing_steps = [step for step in steps if step not in project.setup]
+def require_setup_steps(workspace: WorkspaceRecord, steps: tuple[str, ...]) -> None:
+    missing_steps = [step for step in steps if step not in workspace.setup]
     if missing_steps:
         raise RuntimeError(
-            f"Project '{project.slug}' is missing required setup steps: {', '.join(sorted(missing_steps))}"
+            f"Workspace '{workspace.slug}' is missing required setup steps: {', '.join(sorted(missing_steps))}"
         )

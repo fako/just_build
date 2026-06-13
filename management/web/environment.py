@@ -1,5 +1,6 @@
 from pathlib import Path
-from invoke import Config
+
+from invoke.config import Config
 
 
 def create_environment_configuration(base_dir: Path) -> Config:

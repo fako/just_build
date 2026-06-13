@@ -1,6 +1,6 @@
-from invoke import task
+from invoke.tasks import task
 
-from workspaces.cli.client import get_project
+from workspaces.cli.client import get_workspace
 from workspaces.cli.common import (
     DEFAULT_HOST,
     DEFAULT_PROXY_PORT,
@@ -9,7 +9,7 @@ from workspaces.cli.common import (
     docker_exec,
     ensure_workspaces_container,
     log_setup_step,
-    parse_project_domain,
+    parse_workspace_domain,
     publish_staged_file,
     require_setup_steps,
     staged_nginx_config_path,
@@ -17,31 +17,31 @@ from workspaces.cli.common import (
 )
 
 
-@task(help={"project_slug": "Existing project slug created and initialized earlier"})
-def enable(ctx, project_slug: str):
-    """Enable staged nginx and supervisor configs for a project."""
-    project = get_project(project_slug)
+@task(help={"workspace_slug": "Existing workspace slug created and initialized earlier"})
+def enable(ctx, workspace_slug: str):
+    """Enable staged nginx and supervisor configs for a workspace."""
+    workspace = get_workspace(workspace_slug)
     require_setup_steps(
-        project,
-        ("project_created", "home_created", "ssh_access", "config_staged", "git_initialized", "django_initialized", "initial_commit"),
+        workspace,
+        ("workspace_created", "home_created", "ssh_access", "config_staged", "git_initialized", "django_initialized", "initial_commit"),
     )
 
-    staged_supervisor = staged_supervisor_config_path(project.slug)
-    staged_nginx = staged_nginx_config_path(project.slug)
+    staged_supervisor = staged_supervisor_config_path(workspace.slug)
+    staged_nginx = staged_nginx_config_path(workspace.slug)
     if not staged_supervisor.exists() or not staged_nginx.exists():
-        raise RuntimeError(f"Staged configs are missing for project '{project.slug}'")
+        raise RuntimeError(f"Staged configs are missing for workspace '{workspace.slug}'")
 
-    publish_staged_file(staged_supervisor, active_supervisor_config_path(project.slug))
-    publish_staged_file(staged_nginx, active_nginx_config_path(project.slug))
+    publish_staged_file(staged_supervisor, active_supervisor_config_path(workspace.slug))
+    publish_staged_file(staged_nginx, active_nginx_config_path(workspace.slug))
 
     ensure_workspaces_container(ctx)
     docker_exec(ctx, "supervisorctl reread")
     docker_exec(ctx, "supervisorctl update")
     docker_exec(ctx, "nginx -s reload")
-    log_setup_step(project.slug, "enabled")
+    log_setup_step(workspace.slug, "enabled")
 
-    domain = parse_project_domain(staged_nginx)
+    domain = parse_workspace_domain(staged_nginx)
     print("")
-    print(f"Enabled staged configs for {project.name} ({project.slug}).")
+    print(f"Enabled staged configs for {workspace.name} ({workspace.slug}).")
     print(f'Verify with a host header: curl -H "Host: {domain}" http://{DEFAULT_HOST}:{DEFAULT_PROXY_PORT}/')
     print(f"Or open in a browser after hosts setup: http://{domain}:{DEFAULT_PROXY_PORT}/")

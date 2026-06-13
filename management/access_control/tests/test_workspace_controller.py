@@ -1,12 +1,12 @@
 import pytest
 
-from access_control.models import Project
+from access_control.models import Workspace
 
 
 @pytest.mark.django_db
-def test_create_project(client):
+def test_create_workspace(client):
     response = client.post(
-        "/api/v1/projects/",
+        "/api/v1/workspaces/",
         data={"name": "Acme", "slug": "acme"},
         content_type="application/json",
     )
@@ -23,34 +23,34 @@ def test_create_project(client):
         "port": None,
         "identity_file": None,
     }
-    assert Project.objects.filter(slug="acme").exists()
+    assert Workspace.objects.filter(slug="acme").exists()
 
 
 @pytest.mark.django_db
-def test_create_project_conflict(client):
-    Project.objects.create(name="Acme", slug="acme")
+def test_create_workspace_conflict(client):
+    Workspace.objects.create(name="Acme", slug="acme")
 
     response = client.post(
-        "/api/v1/projects/",
+        "/api/v1/workspaces/",
         data={"name": "Acme Again", "slug": "acme"},
         content_type="application/json",
     )
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "Project already exists"}
+    assert response.json() == {"detail": "Workspace already exists"}
 
 
 @pytest.mark.django_db
-def test_list_projects(client):
-    project_a = Project.objects.create(name="Zulu", slug="zulu")
-    project_b = Project.objects.create(name="Alpha", slug="alpha")
+def test_list_workspaces(client):
+    workspace_a = Workspace.objects.create(name="Zulu", slug="zulu")
+    workspace_b = Workspace.objects.create(name="Alpha", slug="alpha")
 
-    response = client.get("/api/v1/projects/")
+    response = client.get("/api/v1/workspaces/")
 
     assert response.status_code == 200
     assert response.json() == [
         {
-            "id": str(project_b.id),
+            "id": str(workspace_b.id),
             "name": "Alpha",
             "slug": "alpha",
             "django_module": "web",
@@ -64,7 +64,7 @@ def test_list_projects(client):
             },
         },
         {
-            "id": str(project_a.id),
+            "id": str(workspace_a.id),
             "name": "Zulu",
             "slug": "zulu",
             "django_module": "web",
@@ -81,14 +81,14 @@ def test_list_projects(client):
 
 
 @pytest.mark.django_db
-def test_get_project(client):
-    project = Project.objects.create(name="Acme", slug="acme")
+def test_get_workspace(client):
+    workspace = Workspace.objects.create(name="Acme", slug="acme")
 
-    response = client.get(f"/api/v1/projects/{project.slug}/")
+    response = client.get(f"/api/v1/workspaces/{workspace.slug}/")
 
     assert response.status_code == 200
     assert response.json() == {
-        "id": str(project.id),
+        "id": str(workspace.id),
         "name": "Acme",
         "slug": "acme",
         "django_module": "web",
@@ -104,19 +104,19 @@ def test_get_project(client):
 
 
 @pytest.mark.django_db
-def test_get_project_not_found(client):
-    response = client.get("/api/v1/projects/missing-project/")
+def test_get_workspace_not_found(client):
+    response = client.get("/api/v1/workspaces/missing-workspace/")
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Project not found"}
+    assert response.json() == {"detail": "Workspace not found"}
 
 
 @pytest.mark.django_db
-def test_patch_project_setup_and_ssh_metadata(client):
-    project = Project.objects.create(name="Acme", slug="acme", setup={"workspace_directory": "2026-03-25T10:00:00Z"})
+def test_patch_workspace_setup_and_ssh_metadata(client):
+    workspace = Workspace.objects.create(name="Acme", slug="acme", setup={"workspace_directory": "2026-03-25T10:00:00Z"})
 
     response = client.patch(
-        f"/api/v1/projects/{project.slug}/",
+        f"/api/v1/workspaces/{workspace.slug}/",
         data={
             "setup": {
                 "ssh_access": "2026-03-25T11:00:00Z",
@@ -126,7 +126,7 @@ def test_patch_project_setup_and_ssh_metadata(client):
                 "user": "acme",
                 "host": "localhost",
                 "port": 2222,
-                "identity_file": "workspaces/ssh/keys/projects/acme/id_ed25519",
+                "identity_file": "workspaces/ssh/keys/src/acme/id_ed25519",
             },
         },
         content_type="application/json",
@@ -143,38 +143,38 @@ def test_patch_project_setup_and_ssh_metadata(client):
         "user": "acme",
         "host": "localhost",
         "port": 2222,
-        "identity_file": "workspaces/ssh/keys/projects/acme/id_ed25519",
+        "identity_file": "workspaces/ssh/keys/src/acme/id_ed25519",
     }
 
-    project.refresh_from_db()
-    assert project.setup["workspace_directory"] == "2026-03-25T10:00:00Z"
-    assert project.setup["ssh_access"] == "2026-03-25T11:00:00Z"
-    assert project.ssh == {
+    workspace.refresh_from_db()
+    assert workspace.setup["workspace_directory"] == "2026-03-25T10:00:00Z"
+    assert workspace.setup["ssh_access"] == "2026-03-25T11:00:00Z"
+    assert workspace.ssh == {
         "alias": "acme-workspace",
         "user": "acme",
         "host": "localhost",
         "port": 2222,
-        "identity_file": "workspaces/ssh/keys/projects/acme/id_ed25519",
+        "identity_file": "workspaces/ssh/keys/src/acme/id_ed25519",
     }
 
 
 @pytest.mark.django_db
-def test_patch_project_not_found(client):
+def test_patch_workspace_not_found(client):
     response = client.patch(
-        "/api/v1/projects/missing-project/",
+        "/api/v1/workspaces/missing-workspace/",
         data={"setup": {"ssh_access": "2026-03-25T11:00:00Z"}},
         content_type="application/json",
     )
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Project not found"}
+    assert response.json() == {"detail": "Workspace not found"}
 
 
 @pytest.mark.django_db
 def test_get_ssh_config(client, settings):
     settings.BASE_DIR = settings.BASE_DIR.parent / "management"
 
-    Project.objects.create(
+    Workspace.objects.create(
         name="Acme",
         slug="acme",
         ssh={
@@ -182,12 +182,12 @@ def test_get_ssh_config(client, settings):
             "user": "acme",
             "host": "localhost",
             "port": 2222,
-            "identity_file": "workspaces/ssh/keys/projects/acme/id_ed25519",
+            "identity_file": "workspaces/ssh/keys/src/acme/id_ed25519",
         },
     )
-    Project.objects.create(name="No SSH", slug="no-ssh")
+    Workspace.objects.create(name="No SSH", slug="no-ssh")
 
-    response = client.get("/api/v1/projects/ssh-config/")
+    response = client.get("/api/v1/workspaces/ssh-config/")
 
     assert response.status_code == 200
     assert response["Content-Type"].startswith("text/plain")
@@ -199,16 +199,16 @@ def test_get_ssh_config(client, settings):
         "    HostName localhost\n"
         "    Port 2222\n"
         "    User acme\n"
-        f"    IdentityFile {settings.BASE_DIR.parent / 'workspaces/ssh/keys/projects/acme/id_ed25519'}\n"
+        f"    IdentityFile {settings.BASE_DIR.parent / 'workspaces/ssh/keys/src/acme/id_ed25519'}\n"
     )
 
 
 @pytest.mark.django_db
-def test_patch_project_rejects_invalid_ssh_shape(client):
-    project = Project.objects.create(name="Acme", slug="acme")
+def test_patch_workspace_rejects_invalid_ssh_shape(client):
+    workspace = Workspace.objects.create(name="Acme", slug="acme")
 
     response = client.patch(
-        f"/api/v1/projects/{project.slug}/",
+        f"/api/v1/workspaces/{workspace.slug}/",
         data={"ssh": {"port": "not-a-port"}},
         content_type="application/json",
     )

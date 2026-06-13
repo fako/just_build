@@ -1,7 +1,7 @@
 from ninja import Router
 
-from access_control.controllers.project import controller as project_controller
+from access_control.controllers.workspace import controller as workspace_controller
 
 
 router = Router()
-router.add_router("projects", project_controller)
+router.add_router("workspaces", workspace_controller)
