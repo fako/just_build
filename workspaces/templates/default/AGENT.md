@@ -10,5 +10,6 @@ The prefered stack for projects is:
 * Redis
 * Tika
 * Invoke (CLI library in Python)
+* Jinja2+HTMX+Tailwind
 
 You are not required to use the full stack, but when picking a tool make sure the choice aligns with the prefered choices or consult your human.
