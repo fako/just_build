@@ -1,6 +1,6 @@
 ## Workspace
 
-You are working in a shielded workspace where your user has its own home on a Debian box with Python 3.12 as its main program. You are completely whitelisted for this environment and can do anything you want, except for leaving this sandbox. Prefer the usage of Python when writing code or scripts, but the alternative is to ask your human to install more software for you.
+You are working in a shielded workspace where your user has its own home on a Debian box with Python 3.12 as its main program. You are completely whitelisted for this environment and can do anything you want, except for leaving this sandbox and the home folder. Prefer the usage of Python when writing code or scripts, but the alternative is to ask your human to install more software for you.
 
 ## Project stack
 

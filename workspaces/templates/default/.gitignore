@@ -4,11 +4,13 @@
 .bash_logout
 .profile
 .lesshst
+.viminfo
 
-# Cursor exclusions
+# IDE exclusions
 .cache/
 .cursor-server/
 .cursor/
+.codex/
 
 # Python exclusions
 __pycache__
