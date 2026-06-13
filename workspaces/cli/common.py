@@ -293,6 +293,21 @@ def install_workspace_shell_environment(ctx: Context, workspace_slug: str) -> No
         )
 
 
+def ensure_workspace_static_dir(ctx: Context, workspace_slug: str) -> None:
+    quoted_slug = quote(workspace_slug)
+    quoted_home_dir = quote(f"/home/{workspace_slug}")
+    quoted_static_dir = quote(f"/home/{workspace_slug}/staticfiles")
+    quoted_state_dir = quote(WORKSPACES_STATE_DIR)
+    docker_exec(
+        ctx,
+        f"groupmod -P {quoted_state_dir} -a -U www-data {quoted_slug}"
+        f" && cp -a {quoted_state_dir}/etc/group /etc/group"
+        f" && mkdir -p {quoted_static_dir}"
+        f" && chown {quoted_slug}:{quoted_slug} {quoted_home_dir} {quoted_static_dir}"
+        f" && chmod 750 {quoted_home_dir} {quoted_static_dir}",
+    )
+
+
 def ensure_workspaces_container(ctx: Context) -> None:
     ensure_ssh_host_keys(ctx)
     ctx.run("docker compose --profile workspaces up -d workspaces", echo=True)

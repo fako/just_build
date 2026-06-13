@@ -24,3 +24,4 @@ venv/bin/python -m pip install -e .
 ```
 
 The supervisor-managed web process runs through `venv/bin/python`, so install dependencies there before expecting the service to start.
+Static files are gathered through collectstatic and end up in staticfiles/

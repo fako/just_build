@@ -4,6 +4,7 @@ from workspaces.cli.create import create
 from workspaces.cli.enable import enable
 from workspaces.cli.init import init
 from workspaces.cli.setup import setup
+from workspaces.cli.sync import sync
 from workspaces.cli.update import update
 
 
@@ -13,3 +14,4 @@ namespace.add_task(create)
 namespace.add_task(init)
 namespace.add_task(update)
 namespace.add_task(enable)
+namespace.add_task(sync)

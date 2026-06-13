@@ -20,4 +20,5 @@ venv/
 
 # Local runtime state
 .env
+staticfiles/
 data/
