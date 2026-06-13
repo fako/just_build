@@ -3,6 +3,7 @@ from pathlib import Path
 
 CLI_DIR = Path(__file__).resolve().parent
 WORKSPACES_DIR = CLI_DIR.parent
+TEMPLATES_DIR = WORKSPACES_DIR / "templates"
 SRC_DIR = WORKSPACES_DIR / "src"
 REPOS_DIR = SRC_DIR / "repos"
 ACTIVE_SUPERVISOR_DIR = SRC_DIR / "supervisor"

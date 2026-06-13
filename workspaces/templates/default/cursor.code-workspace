@@ -1,0 +1,14 @@
+{
+    "editor.rulers": [120],
+    "workbench.editor.wrapTabs": true,
+    "editor.inlayHints.enabled": "off",
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/.pytest_cache": true
+    },
+	"folders": [
+		{
+			"path": "."
+		}
+	]
+}

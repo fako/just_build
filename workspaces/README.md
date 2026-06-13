@@ -41,7 +41,7 @@ docker compose --profile workspaces up --build
 # Create the workspace, SSH access, and staged configs
 invoke workspaces.create --name="My Workspace" --slug=myworkspace
 
-# Initialize git and Django over SSH as the workspace user
+# Initialize git, Django, and workspace templates over SSH as the workspace user
 invoke workspaces.init --workspace-slug=myworkspace
 
 # Enable the staged configs after initialization
@@ -84,8 +84,15 @@ invoke workspaces.enable --workspace-slug=myworkspace
 
 The commands do the following:
 - `workspaces.create` creates the management workspace, creates the Linux user and home directory, generates SSH access, stages nginx and supervisor configs, and refreshes `workspaces/ssh/config`
-- `workspaces.init` connects over SSH as the project user, initializes git, runs `django-admin startproject <django_module> .`, and creates the initial commit
+- `workspaces.init` connects over SSH as the project user, initializes git, runs `django-admin startproject <django_module> .`, resolves workspace templates, and creates the initial commit
 - `workspaces.enable` activates the staged configs and reloads supervisor and nginx
+
+By default, `workspaces.init` applies the `default` template from `workspaces/templates/default`. Templates are layered in
+the comma-separated order provided, so later templates overwrite files from earlier templates:
+
+```bash
+invoke workspaces.init --workspace-slug=myworkspace --templates=default,custom
+```
 
 ### 1. Create Database
 

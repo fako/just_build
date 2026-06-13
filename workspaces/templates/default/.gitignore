@@ -1,0 +1,15 @@
+# OS + home exclusions
+.bashrc
+.bash_history
+.bash_logout
+.profile
+.lesshst
+
+# Cursor exclusions
+.cache/
+.cursor-server/
+.cursor/
+
+# Python exclusions
+__pycache__
+venv
