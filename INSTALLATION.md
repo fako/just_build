@@ -30,22 +30,20 @@ To let OpenSSH and Cursor Remote SSH see generated workspace entries, add this o
 Include /absolute/path/to/just_build/workspaces/ssh/config
 ```
 
-If you want to run the project outside of a container you'll need to add the following to your hosts file.
-It's strongly recommended to update your ``/etc/hosts`` immediately,
-to prevent weird error messages if you ever run the project outside of its containers.
+To allow easy CLI communication with the Docker containers of this project you now need to update your `/etc/hosts` to include all container names. This requires your sudo password.
 
+```bash
+invoke install.hosts-file
 ```
-127.0.0.1 postgres
-127.0.0.1 redis
-127.0.0.1 tika
-127.0.0.1 management
-```
-
-This way you can reach these containers outside of the container network through their names.
-This is important for many setup commands.
 
 To finish the container setup you can run these commands to build all containers:
 
 ```bash
-docker compose up --build
+docker compose up --build -d
+```
+
+And run the following to setup the management database that stores workspace details.
+
+```bash
+invoke management.setup-database
 ```
