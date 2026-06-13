@@ -26,6 +26,8 @@ from workspaces.cli.setup import ensure_ssh_host_keys
 DEFAULT_HOST = "localhost"
 DEFAULT_SSH_PORT = 2222
 DEFAULT_PROXY_PORT = 7000
+WORKSPACES_STATE_DIR = "/workspaces/state"
+ACCOUNT_FILES = ("passwd", "group", "shadow", "gshadow")
 
 
 def timestamp() -> str:
@@ -185,9 +187,28 @@ def assert_container_workspace_absent(ctx: Context, workspace_slug: str) -> None
         )
 
 
+def ensure_workspace_state_account_files(ctx: Context) -> None:
+    state_etc = f"{WORKSPACES_STATE_DIR}/etc"
+    docker_exec(ctx, f"mkdir -p {quote(state_etc)}")
+    for account_file in ACCOUNT_FILES:
+        source = quote(f"/etc/{account_file}")
+        target = quote(f"{state_etc}/{account_file}")
+        docker_exec(ctx, f"test -f {target} || cp -a {source} {target}")
+
+
+def sync_workspace_state_account_files(ctx: Context) -> None:
+    account_files = " ".join(quote(f"{WORKSPACES_STATE_DIR}/etc/{account_file}") for account_file in ACCOUNT_FILES)
+    _ = docker_exec(ctx, f"cp -a {account_files} /etc/")
+
+
 def create_container_user_and_home(ctx: Context, workspace_slug: str) -> None:
     quoted_slug = quote(workspace_slug)
-    docker_exec(ctx, f"useradd -m -s /bin/bash {quoted_slug}")
+    quoted_state_dir = quote(WORKSPACES_STATE_DIR)
+
+    ensure_workspace_state_account_files(ctx)
+    docker_exec(ctx, f"groupadd -P {quoted_state_dir} {quoted_slug}")
+    docker_exec(ctx, f"useradd -P {quoted_state_dir} -M -s /bin/bash -g {quoted_slug} {quoted_slug}")
+    sync_workspace_state_account_files(ctx)
     docker_exec(ctx, f"mkdir -p /home/{quoted_slug} && chown -R {quoted_slug}:{quoted_slug} /home/{quoted_slug}")
 
 

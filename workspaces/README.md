@@ -141,11 +141,19 @@ CELERY_TASK_DEFAULT_QUEUE = "myproject"  # Unique queue name
 
 ### 3. Create System User
 
-Create a Linux user for the project inside the container:
+`workspaces.create` creates the Linux user automatically. If you need to create one manually, write it into the
+persistent account database and sync it into the running container:
 
 ```bash
-docker exec workspaces useradd -m -s /bin/bash myproject
+docker exec workspaces groupadd -P /workspaces/state myproject
+docker exec workspaces useradd -P /workspaces/state -M -s /bin/bash -g myproject myproject
+docker exec workspaces sh -c 'P=/workspaces/state/etc; cp -a "$P/passwd" "$P/group" "$P/shadow" "$P/gshadow" /etc/'
+docker exec workspaces sh -c 'mkdir -p /home/myproject && chown -R myproject:myproject /home/myproject'
 ```
+
+Workspace Linux users are stored in the persistent Docker volume `workspaces_state` (mounted at `/workspaces/state`).
+The container entrypoint syncs `/workspaces/state/etc/{passwd,group,shadow,gshadow}` into `/etc` before supervisord
+starts, so users survive container rebuilds and recreates.
 
 #### SSH Access for AI Agents (Cursor Remote SSH)
 

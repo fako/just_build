@@ -1,6 +1,7 @@
 volumes:
   postgres:
   workspaces_ssh_authorized_keys:
+  workspaces_state:
 
 
 services:
@@ -61,6 +62,7 @@ services:
       - ./workspaces/src/supervisor:/etc/supervisor/conf.d
       - ./workspaces/src/nginx:/etc/nginx/conf.d
       - workspaces_ssh_authorized_keys:/etc/ssh/authorized_keys
+      - workspaces_state:/workspaces/state
     depends_on:
       postgres:
         condition: service_healthy

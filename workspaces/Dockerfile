@@ -26,7 +26,11 @@ RUN mkdir -p /var/log/supervisor \
     && mkdir -p /var/log/nginx \
     && mkdir -p /var/log/projects \
     && mkdir -p /etc/supervisor/conf.d \
-    && mkdir -p /etc/nginx/conf.d
+    && mkdir -p /etc/nginx/conf.d \
+    && mkdir -p /workspaces/state
+
+COPY container/docker-entrypoint.sh /usr/local/bin/workspaces-entrypoint
+RUN chmod +x /usr/local/bin/workspaces-entrypoint
 
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY supervisor/supervisord.conf /etc/supervisor/supervisord.conf
@@ -39,4 +43,5 @@ EXPOSE 22 7000
 
 WORKDIR /home
 
+ENTRYPOINT ["/usr/local/bin/workspaces-entrypoint"]
 CMD ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
