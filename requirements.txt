@@ -6,7 +6,7 @@ pydantic==2.12.5
 # Environment
 wheel==0.46.1
 fabric==3.2.2
-invoke==2.2.1
+invoke==3.0.3
 
 # Testing & quality
 flake8==7.3.0
@@ -15,6 +15,9 @@ mypy==1.18.2
 pytest==8.4.2
 devtools==0.12.2
 ipdb==0.13.13
+django-stubs==6.0.2
+celery-types==0.22.0
+basedpyright==1.39.0
 
 # The dependencies that all agents have access to
 -r workspaces/requirements.txt

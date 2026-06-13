@@ -2,7 +2,7 @@
 psycopg[binary,pool]==3.2.3
 pgvector==0.4.1
 uvicorn==0.37.0
-invoke==2.2.1
+invoke==3.0.3
 
 # Main
 Django==5.2.12
