@@ -5,6 +5,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone as datetime_timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -64,6 +66,9 @@ class CredentialStore(models.Model):
     store_key = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     modified_at = models.DateTimeField(auto_now=True)
+
+    if TYPE_CHECKING:
+        credentials: models.Manager["Credential"]
 
     class Meta:
         ordering = ("name",)
@@ -232,7 +237,9 @@ class CredentialStore(models.Model):
 
 class Credential(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    store = models.ForeignKey(CredentialStore, on_delete=models.CASCADE, related_name="credentials")
+    store: models.ForeignKey[CredentialStore, CredentialStore] = models.ForeignKey(
+        CredentialStore, on_delete=models.CASCADE, related_name="credentials"
+    )
     path = models.CharField(max_length=1024)
     folder = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -259,9 +266,11 @@ class Credential(models.Model):
         self.folder = _split_path(self.path)[0]
 
     def _load_secret(self) -> ParsedCredential:
-        if self._cached_secret is None:
-            self._cached_secret = self.store.get_credential(self.path)
-        return self._cached_secret
+        cached_secret = self._cached_secret
+        if cached_secret is None:
+            cached_secret = self.store.get_credential(self.path)
+            self._cached_secret = cached_secret
+        return cached_secret
 
     def clear_cached_secret(self) -> None:
         self._cached_secret = None

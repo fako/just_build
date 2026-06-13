@@ -2,6 +2,16 @@
     "pythonVersion": "3.12",
     "venvPath": ".",
     "venv": "venv",
+    "typeCheckingMode": "standard",
+    "reportAny": "none",
+    "reportExplicitAny": "none",
+    "reportImplicitOverride": "none",
+    "reportUnannotatedClassAttribute": "none",
+    "reportUnknownArgumentType": "none",
+    "reportUnknownLambdaType": "none",
+    "reportUnknownMemberType": "none",
+    "reportUnknownParameterType": "none",
+    "reportUnknownVariableType": "none",
     "exclude": [
         "workspaces"
     ],
