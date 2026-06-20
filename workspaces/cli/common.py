@@ -28,6 +28,7 @@ from workspaces.cli.setup import ensure_ssh_host_keys
 DEFAULT_HOST = "localhost"
 DEFAULT_SSH_PORT = 2222
 DEFAULT_PROXY_PORT = 7000
+OPENCODE_ATTACH_URL = "http://127.0.0.1:4097"
 WORKSPACES_STATE_DIR = "/workspaces/state"
 WORKSPACES_SECRETS_DIR = "/workspaces/secrets"
 ACCOUNT_FILES = ("passwd", "group", "shadow", "gshadow")
@@ -206,6 +207,7 @@ def render_workspace_secret_env(workspace_slug: str, postgres_password: str) -> 
         "PGHOST=postgres",
         "PGPORT=5432",
         f"PGPASSFILE={pgpass_path}",
+        f"OPENCODE_ATTACH_URL={OPENCODE_ATTACH_URL}",
         "",
     ])
 

@@ -67,6 +67,17 @@ def test_copy_template_files_traverses_directories_and_renders_templates(tmp_pat
     assert "test -d /home/demo/web/empty || mkdir -p /home/demo/web/empty" in conn.commands
 
 
+def test_default_opencode_template_uses_workspace_reference_without_server_credentials() -> None:
+    template_path = init_cli.TEMPLATES_DIR / "default" / "opencode.jsonc.tpl"
+
+    rendered = init_cli.render_template_file(template_path, workspace_record())
+
+    assert '"demo"' in rendered
+    assert '"path": "/home/demo"' in rendered
+    assert '"server"' not in rendered
+    assert "password" not in rendered.lower()
+
+
 def test_ensure_workspace_database_uses_generated_workspace_secrets(monkeypatch) -> None:
     monkeypatch.setattr(
         init_cli,

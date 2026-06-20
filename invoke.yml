@@ -6,6 +6,11 @@ tika:
   host: "http://tika:9998"
   return_type: "xml"
 
+opencode:
+  server:
+    username: "fako"
+    password: "qwerty"
+
 management:
   database:
     name: "management"
