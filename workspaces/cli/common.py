@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from os import getuid
 from pathlib import Path
 from secrets import token_urlsafe
 from shlex import quote
@@ -367,6 +368,17 @@ def create_container_user_and_home(ctx: Context, workspace_module: str) -> None:
     docker_exec(
         ctx,
         f"mkdir -p /home/{quoted_module} && chown -R {quoted_module}:{quoted_module} /home/{quoted_module}",
+    )
+
+
+def grant_host_workspace_access(ctx: Context, workspace_module: str, host_uid: int | None = None) -> None:
+    uid = getuid() if host_uid is None else host_uid
+    quoted_home = quote(f"/home/{workspace_module}")
+    docker_exec(
+        ctx,
+        f"setfacl -R -m u:{uid}:rwX {quoted_home}"
+        f" && find {quoted_home} -type d -exec setfacl -m d:u:{uid}:rwX {{}} +",
+        user="root",
     )
 
 

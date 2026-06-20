@@ -53,6 +53,32 @@ def test_read_workspace_secret_environment_reads_as_container_root(monkeypatch) 
     }]
 
 
+def test_grant_host_workspace_access_sets_access_and_inherited_acls(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+    ctx = object()
+
+    monkeypatch.setattr(
+        common,
+        "docker_exec",
+        lambda received_ctx, script, **kwargs: calls.append({
+            "ctx": received_ctx,
+            "script": script,
+            **kwargs,
+        }),
+    )
+
+    common.grant_host_workspace_access(ctx, "datagrowth_django", host_uid=1000)
+
+    assert calls == [{
+        "ctx": ctx,
+        "script": (
+            "setfacl -R -m u:1000:rwX /home/datagrowth_django"
+            " && find /home/datagrowth_django -type d -exec setfacl -m d:u:1000:rwX {} +"
+        ),
+        "user": "root",
+    }]
+
+
 def test_stage_workspace_configs_uses_module_for_runtime_and_slug_for_domain(tmp_path, monkeypatch) -> None:
     supervisor_template = tmp_path / "supervisor.template"
     supervisor_template.write_text("[program:PROJECT_NAME]\ndirectory=/home/PROJECT_NAME\n")

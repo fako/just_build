@@ -11,6 +11,7 @@ from workspaces.cli.common import (
     ensure_workspace_secret_root,
     ensure_workspace_keypair,
     ensure_workspaces_container,
+    grant_host_workspace_access,
     install_workspace_shell_environment,
     log_setup_step,
     publish_authorized_key,
@@ -41,6 +42,7 @@ def create(ctx, name: str, module: str, domain: str | None = None, django_module
     log_setup_step(workspace.module, "workspace_created")
 
     create_container_user_and_home(ctx, workspace.module)
+    grant_host_workspace_access(ctx, workspace.module)
     log_setup_step(workspace.module, "home_created")
 
     secret_path = ensure_workspace_secret_file(ctx, workspace.module)
