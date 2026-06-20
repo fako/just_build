@@ -24,6 +24,7 @@ class WorkspaceSSHSchema(Schema):
 class WorkspaceSchema(Schema):
     id: UUID
     name: str
+    module: str
     slug: str
     django_module: str
     setup: dict[str, str]
@@ -33,7 +34,7 @@ class WorkspaceSchema(Schema):
 class WorkspaceCreateSchema(ModelSchema):
     class Meta:
         model = Workspace
-        fields = ["name", "slug", "django_module"]
+        fields = ["name", "module", "django_module"]
 
 
 class WorkspaceSSHPatchSchema(Schema):
@@ -49,9 +50,9 @@ class WorkspacePatchSchema(Schema):
     ssh: WorkspaceSSHPatchSchema | None = None
 
 
-def get_workspace_or_404(workspace_slug: str) -> Workspace:
+def get_workspace_or_404(workspace_module: str) -> Workspace:
     try:
-        return Workspace.objects.get(slug=workspace_slug)
+        return Workspace.objects.get(module=workspace_module)
     except Workspace.DoesNotExist as exc:
         raise HttpError(404, "Workspace not found") from exc
 
@@ -108,9 +109,9 @@ def get_ssh_config(request: HttpRequest) -> HttpResponse:
     return HttpResponse(build_ssh_config(workspaces), content_type="text/plain; charset=utf-8")
 
 
-@controller.patch("/{workspace_slug}/", response=WorkspaceSchema, tags=["Workspaces"])
-def patch_workspace(request: HttpRequest, workspace_slug: str, data: WorkspacePatchSchema) -> Workspace:
-    workspace = get_workspace_or_404(workspace_slug)
+@controller.patch("/{workspace_module}/", response=WorkspaceSchema, tags=["Workspaces"])
+def patch_workspace(request: HttpRequest, workspace_module: str, data: WorkspacePatchSchema) -> Workspace:
+    workspace = get_workspace_or_404(workspace_module)
     update_fields: list[str] = []
 
     payload = data.model_dump(exclude_none=True)
@@ -130,6 +131,6 @@ def patch_workspace(request: HttpRequest, workspace_slug: str, data: WorkspacePa
     return workspace
 
 
-@controller.get("/{workspace_slug}/", response=WorkspaceSchema, tags=["Workspaces"])
-def get_workspace(request: HttpRequest, workspace_slug: str) -> Workspace:
-    return get_workspace_or_404(workspace_slug)
+@controller.get("/{workspace_module}/", response=WorkspaceSchema, tags=["Workspaces"])
+def get_workspace(request: HttpRequest, workspace_module: str) -> Workspace:
+    return get_workspace_or_404(workspace_module)

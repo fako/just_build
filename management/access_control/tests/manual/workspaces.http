@@ -7,7 +7,7 @@ Content-Type: application/json
 
 {
   "name": "Acme",
-  "slug": "acme",
+  "module": "acme",
   "django_module": "web"
 }
 
