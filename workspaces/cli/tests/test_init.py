@@ -49,6 +49,19 @@ def test_template_output_path_strips_tpl_before_final_suffix() -> None:
     assert init_cli.template_output_path(Path("web/settings.py")) == Path("web/settings.py")
 
 
+def test_ensure_git_repo_initializes_main_branch() -> None:
+    conn = RecordingConnection()
+
+    init_cli.ensure_git_repo(conn, "/home/demo", "Demo Workspace", "demo")
+
+    assert conn.commands == [
+        "test -d /home/demo/.git",
+        "git init -b main /home/demo",
+        "git -C /home/demo config user.name 'Demo Workspace'",
+        "git -C /home/demo config user.email demo@workspace.local",
+    ]
+
+
 def test_copy_template_files_traverses_directories_and_renders_templates(tmp_path, monkeypatch) -> None:
     source_dir = tmp_path / "default"
     (source_dir / "web" / "empty").mkdir(parents=True)

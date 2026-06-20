@@ -23,7 +23,7 @@ TEMPLATE_ENV = Environment(autoescape=False, keep_trailing_newline=True, undefin
 def ensure_git_repo(conn, repo_dir: str, workspace_name: str, workspace_module: str) -> None:
     result = conn.run(f"test -d {quote(repo_dir)}/.git", hide=True, warn=True)
     if not result.ok:
-        conn.run(f"git init {quote(repo_dir)}", echo=True)
+        conn.run(f"git init -b main {quote(repo_dir)}", echo=True)
 
     conn.run(f"git -C {quote(repo_dir)} config user.name {quote(workspace_name)}", echo=True)
     conn.run(f"git -C {quote(repo_dir)} config user.email {quote(workspace_module)}@workspace.local", echo=True)
