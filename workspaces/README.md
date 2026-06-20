@@ -41,7 +41,7 @@ docker compose --profile workspaces up --build
 # Create the workspace, SSH access, and staged configs
 invoke workspaces.create --name="My Workspace" --module=my_workspace
 
-# Initialize git, Django, and workspace templates over SSH as the workspace user
+# Initialize Django and workspace templates over SSH as the workspace user
 invoke workspaces.init --workspace-module=my_workspace
 
 # Enable the staged configs after initialization
@@ -111,6 +111,15 @@ the comma-separated order provided, so later templates overwrite files from earl
 ```bash
 invoke workspaces.init --workspace-module=my_workspace --templates=default,custom
 ```
+
+To create the Django workspace without initializing a git repository, use:
+
+```bash
+invoke workspaces.init --workspace-module=my_workspace --no-git
+```
+
+Interactive SSH shells automatically activate `/home/<workspace-module>/venv` once it exists. Workspace creation
+installs this behavior in both `.profile` and `.bashrc`, covering Bash login and non-login interactive shells.
 
 ### 1. Create Database
 
@@ -236,8 +245,8 @@ Initialize it over SSH as the project user with:
 invoke workspaces.init --workspace-module=my_workspace
 ```
 
-This command initializes git, sets local commit identity, runs `django-admin startproject <django_module> .`,
-and creates the initial commit.
+This command runs `django-admin startproject <django_module> .` and applies workspace templates. By default it also
+initializes git, sets local commit identity, and creates the initial commit; pass `--no-git` to skip all git actions.
 
 ### 5. Stage Supervisor Config
 

@@ -190,10 +190,11 @@ def ensure_initial_commit(conn, repo_dir: str) -> bool:
     help={
         "workspace_module": "Existing workspace module created by workspaces.create",
         "templates": "Comma-separated template names to layer in order, defaults to default.",
+        "git": "Initialize a git repository and create the initial commit (default: enabled).",
     },
 )
-def init(ctx, workspace_module: str, templates: str = "default"):
-    """Initialize git and Django over SSH as the workspace user."""
+def init(ctx, workspace_module: str, templates: str = "default", git: bool = True):
+    """Initialize Django and workspace templates over SSH as the workspace user."""
     workspace = get_workspace(workspace_module)
     require_setup_steps(workspace, ("workspace_created", "home_created", "secrets_created", "ssh_access"))
 
@@ -204,8 +205,9 @@ def init(ctx, workspace_module: str, templates: str = "default"):
         ensure_workspace_database(ctx, workspace)
         log_setup_step(workspace.module, "database_created")
 
-    ensure_git_repo(conn, repo_dir, workspace.name, workspace.module)
-    log_setup_step(workspace.module, "git_initialized")
+    if git:
+        ensure_git_repo(conn, repo_dir, workspace.name, workspace.module)
+        log_setup_step(workspace.module, "git_initialized")
 
     django_initialized = ensure_django_project(conn, repo_dir, workspace.django_module)
     if django_initialized:
@@ -214,9 +216,10 @@ def init(ctx, workspace_module: str, templates: str = "default"):
     template_names = copy_workspace_templates(conn, repo_dir, templates, workspace)
     log_setup_step(workspace.module, "templates_resolved")
 
-    initial_commit = ensure_initial_commit(conn, repo_dir)
-    if initial_commit:
-        log_setup_step(workspace.module, "initial_commit")
+    if git:
+        initial_commit = ensure_initial_commit(conn, repo_dir)
+        if initial_commit:
+            log_setup_step(workspace.module, "initial_commit")
 
     print("")
     print(f"Initialized workspace {workspace.name} ({workspace.module}) over SSH.")

@@ -62,6 +62,44 @@ def test_ensure_git_repo_initializes_main_branch() -> None:
     ]
 
 
+def test_init_can_skip_git_setup(monkeypatch) -> None:
+    workspace = workspace_record(
+        setup={
+            "workspace_created": "now",
+            "home_created": "now",
+            "secrets_created": "now",
+            "ssh_access": "now",
+            "database_created": "now",
+        }
+    )
+    conn = RecordingConnection()
+    setup_steps: list[str] = []
+
+    monkeypatch.setattr(init_cli, "get_workspace", lambda workspace_module: workspace)
+    monkeypatch.setattr(init_cli, "build_ssh_connection", lambda received_workspace: conn)
+    monkeypatch.setattr(
+        init_cli,
+        "ensure_git_repo",
+        lambda *args: pytest.fail("git repository initialized with git=False"),
+    )
+    monkeypatch.setattr(
+        init_cli,
+        "ensure_initial_commit",
+        lambda *args: pytest.fail("initial commit attempted with git=False"),
+    )
+    monkeypatch.setattr(init_cli, "ensure_django_project", lambda *args: False)
+    monkeypatch.setattr(init_cli, "copy_workspace_templates", lambda *args: ("default",))
+    monkeypatch.setattr(
+        init_cli,
+        "log_setup_step",
+        lambda workspace_module, step: setup_steps.append(step),
+    )
+
+    init_cli.init.body(RecordingContext(), "demo", git=False)
+
+    assert setup_steps == ["templates_resolved"]
+
+
 def test_copy_template_files_traverses_directories_and_renders_templates(tmp_path, monkeypatch) -> None:
     source_dir = tmp_path / "default"
     (source_dir / "web" / "empty").mkdir(parents=True)
