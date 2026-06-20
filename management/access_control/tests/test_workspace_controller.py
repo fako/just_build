@@ -116,6 +116,24 @@ def test_get_workspace_not_found(client):
 
 
 @pytest.mark.django_db
+def test_delete_workspace(client):
+    workspace = Workspace.objects.create(name="Acme", module="acme")
+
+    response = client.delete(f"/api/v1/workspaces/{workspace.module}/")
+
+    assert response.status_code == 204
+    assert not Workspace.objects.filter(module="acme").exists()
+
+
+@pytest.mark.django_db
+def test_delete_workspace_not_found(client):
+    response = client.delete("/api/v1/workspaces/missing/")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Workspace not found"}
+
+
+@pytest.mark.django_db
 def test_patch_workspace_setup_and_ssh_metadata(client):
     workspace = Workspace.objects.create(
         name="Acme", module="acme", setup={"workspace_directory": "2026-03-25T10:00:00Z"}

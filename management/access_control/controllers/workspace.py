@@ -134,3 +134,10 @@ def patch_workspace(request: HttpRequest, workspace_module: str, data: Workspace
 @controller.get("/{workspace_module}/", response=WorkspaceSchema, tags=["Workspaces"])
 def get_workspace(request: HttpRequest, workspace_module: str) -> Workspace:
     return get_workspace_or_404(workspace_module)
+
+
+@controller.delete("/{workspace_module}/", response={204: None}, tags=["Workspaces"])
+def delete_workspace(request: HttpRequest, workspace_module: str) -> tuple[int, None]:
+    workspace = get_workspace_or_404(workspace_module)
+    workspace.delete()
+    return 204, None

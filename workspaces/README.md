@@ -91,8 +91,19 @@ invoke workspaces.enable --workspace-module=my_workspace
 
 The commands do the following:
 - `workspaces.create` creates the management workspace, creates the Linux user and home directory, generates SSH access, stages nginx and supervisor configs, and refreshes `workspaces/ssh/config`
-- `workspaces.init` connects over SSH as the project user, initializes git, runs `django-admin startproject <django_module> .`, resolves workspace templates, and creates the initial commit
+- `workspaces.init` connects over SSH as the project user, runs `django-admin startproject <django_module> .`, resolves workspace templates, and by default initializes git and creates the initial commit
 - `workspaces.enable` activates the staged configs and reloads supervisor and nginx
+- `workspaces.remove` removes the workspace repository, secrets, SSH keys and authorization, configs, Linux account,
+  PostgreSQL databases and role, and management record
+
+To remove a workspace completely from the host and containers:
+
+```bash
+invoke workspaces.remove --workspace-module=my_workspace
+```
+
+The command displays the resources that will be permanently deleted and requires an explicit `y` or `yes` before
+starting cleanup.
 
 By default, `workspaces.init` applies the `default` template from `workspaces/templates/default`. Templates are layered in
 the comma-separated order provided, so later templates overwrite files from earlier templates:

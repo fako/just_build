@@ -79,6 +79,23 @@ def patch_workspace(workspace_module: str, *, setup: dict[str, str] | None = Non
     return WorkspaceRecord.model_validate(response.json())
 
 
+def delete_workspace(workspace_module: str) -> bool:
+    """Delete a management workspace, returning false when it was already absent."""
+    try:
+        response = requests.delete(_workspace_url(workspace_module), timeout=10)
+    except requests.RequestException as exc:
+        raise ManagementClientError(f"Could not delete workspace '{workspace_module}': {exc}") from exc
+
+    if response.status_code == 404:
+        return False
+
+    try:
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise ManagementClientError(f"Could not delete workspace '{workspace_module}': {exc}") from exc
+    return True
+
+
 def get_ssh_config() -> str:
     url = f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/workspaces/ssh-config/"
     try:
