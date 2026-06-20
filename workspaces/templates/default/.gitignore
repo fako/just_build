@@ -6,6 +6,7 @@
 .lesshst
 .viminfo
 .psql_history
+.npm
 
 # IDE exclusions
 .cache/

@@ -70,10 +70,10 @@ def extract_workspace_port(config_path: Path) -> int | None:
     return None
 
 
-def next_workspace_port(workspace_slug: str) -> int:
+def next_workspace_port(workspace_module: str) -> int:
     config_paths = [
-        ACTIVE_SUPERVISOR_DIR / f"{workspace_slug}.conf",
-        STAGED_SUPERVISOR_DIR / f"{workspace_slug}.conf",
+        ACTIVE_SUPERVISOR_DIR / f"{workspace_module}.conf",
+        STAGED_SUPERVISOR_DIR / f"{workspace_module}.conf",
     ]
     for config_path in config_paths:
         existing_port = extract_workspace_port(config_path)
@@ -101,67 +101,67 @@ def parse_workspace_domain(config_path: Path) -> str:
     raise RuntimeError(f"Could not determine workspace domain from {config_path}")
 
 
-def workspace_repo_dir(workspace_slug: str) -> Path:
-    return REPOS_DIR / workspace_slug
+def workspace_repo_dir(workspace_module: str) -> Path:
+    return REPOS_DIR / workspace_module
 
 
-def workspace_secret_dir(workspace_slug: str) -> Path:
-    return SECRETS_DIR / workspace_slug
+def workspace_secret_dir(workspace_module: str) -> Path:
+    return SECRETS_DIR / workspace_module
 
 
-def workspace_secret_env_path(workspace_slug: str) -> Path:
-    return workspace_secret_dir(workspace_slug) / ".env"
+def workspace_secret_env_path(workspace_module: str) -> Path:
+    return workspace_secret_dir(workspace_module) / ".env"
 
 
-def workspace_pgpass_path(workspace_slug: str) -> Path:
-    return workspace_secret_dir(workspace_slug) / ".pgpass"
+def workspace_pgpass_path(workspace_module: str) -> Path:
+    return workspace_secret_dir(workspace_module) / ".pgpass"
 
 
-def container_workspace_secret_env_path(workspace_slug: str) -> str:
-    return f"{WORKSPACES_SECRETS_DIR}/{workspace_slug}/.env"
+def container_workspace_secret_env_path(workspace_module: str) -> str:
+    return f"{WORKSPACES_SECRETS_DIR}/{workspace_module}/.env"
 
 
-def container_workspace_pgpass_path(workspace_slug: str) -> str:
-    return f"{WORKSPACES_SECRETS_DIR}/{workspace_slug}/.pgpass"
+def container_workspace_pgpass_path(workspace_module: str) -> str:
+    return f"{WORKSPACES_SECRETS_DIR}/{workspace_module}/.pgpass"
 
 
-def workspace_key_dir(workspace_slug: str) -> Path:
-    return WORKSPACE_SSH_KEYS_DIR / workspace_slug
+def workspace_key_dir(workspace_module: str) -> Path:
+    return WORKSPACE_SSH_KEYS_DIR / workspace_module
 
 
-def workspace_private_key_path(workspace_slug: str) -> Path:
-    return workspace_key_dir(workspace_slug) / "id_ed25519"
+def workspace_private_key_path(workspace_module: str) -> Path:
+    return workspace_key_dir(workspace_module) / "id_ed25519"
 
 
-def workspace_public_key_path(workspace_slug: str) -> Path:
-    return workspace_key_dir(workspace_slug) / "id_ed25519.pub"
+def workspace_public_key_path(workspace_module: str) -> Path:
+    return workspace_key_dir(workspace_module) / "id_ed25519.pub"
 
 
-def staged_supervisor_config_path(workspace_slug: str) -> Path:
-    return STAGED_SUPERVISOR_DIR / f"{workspace_slug}.conf"
+def staged_supervisor_config_path(workspace_module: str) -> Path:
+    return STAGED_SUPERVISOR_DIR / f"{workspace_module}.conf"
 
 
-def staged_nginx_config_path(workspace_slug: str) -> Path:
-    return STAGED_NGINX_DIR / f"{workspace_slug}.conf"
+def staged_nginx_config_path(workspace_module: str) -> Path:
+    return STAGED_NGINX_DIR / f"{workspace_module}.conf"
 
 
-def active_supervisor_config_path(workspace_slug: str) -> Path:
-    return ACTIVE_SUPERVISOR_DIR / f"{workspace_slug}.conf"
+def active_supervisor_config_path(workspace_module: str) -> Path:
+    return ACTIVE_SUPERVISOR_DIR / f"{workspace_module}.conf"
 
 
-def active_nginx_config_path(workspace_slug: str) -> Path:
-    return ACTIVE_NGINX_DIR / f"{workspace_slug}.conf"
+def active_nginx_config_path(workspace_module: str) -> Path:
+    return ACTIVE_NGINX_DIR / f"{workspace_module}.conf"
 
 
-def assert_workspace_state_clean(workspace_slug: str) -> None:
+def assert_workspace_state_clean(workspace_module: str) -> None:
     paths_to_check = [
-        workspace_repo_dir(workspace_slug),
-        workspace_secret_dir(workspace_slug),
-        workspace_key_dir(workspace_slug),
-        staged_supervisor_config_path(workspace_slug),
-        staged_nginx_config_path(workspace_slug),
-        active_supervisor_config_path(workspace_slug),
-        active_nginx_config_path(workspace_slug),
+        workspace_repo_dir(workspace_module),
+        workspace_secret_dir(workspace_module),
+        workspace_key_dir(workspace_module),
+        staged_supervisor_config_path(workspace_module),
+        staged_nginx_config_path(workspace_module),
+        active_supervisor_config_path(workspace_module),
+        active_nginx_config_path(workspace_module),
     ]
 
     dirty_paths = [path for path in paths_to_check if path.exists()]
@@ -172,18 +172,18 @@ def assert_workspace_state_clean(workspace_slug: str) -> None:
         )
 
 
-def ensure_workspace_keypair(ctx: Context, workspace_slug: str) -> tuple[Path, Path]:
-    key_dir = workspace_key_dir(workspace_slug)
+def ensure_workspace_keypair(ctx: Context, workspace_module: str) -> tuple[Path, Path]:
+    key_dir = workspace_key_dir(workspace_module)
     key_dir.mkdir(parents=True, exist_ok=True)
 
-    private_key = workspace_private_key_path(workspace_slug)
-    public_key = workspace_public_key_path(workspace_slug)
+    private_key = workspace_private_key_path(workspace_module)
+    public_key = workspace_public_key_path(workspace_module)
 
     if private_key.exists() or public_key.exists():
         raise RuntimeError(f"Refusing to overwrite existing SSH keypair in {key_dir}")
 
     ctx.run(
-        f'ssh-keygen -t ed25519 -f "{private_key}" -N "" -C "{workspace_slug}@workspace.local"',
+        f'ssh-keygen -t ed25519 -f "{private_key}" -N "" -C "{workspace_module}@workspace.local"',
         echo=True,
     )
     return private_key, public_key
@@ -194,16 +194,16 @@ def ensure_workspace_secret_root() -> None:
     SECRETS_DIR.chmod(0o711)
 
 
-def render_workspace_secret_env(workspace_slug: str, postgres_password: str) -> str:
-    pgpass_path = container_workspace_pgpass_path(workspace_slug)
+def render_workspace_secret_env(workspace_module: str, postgres_password: str) -> str:
+    pgpass_path = container_workspace_pgpass_path(workspace_module)
     return "\n".join([
-        f"POSTGRES_DB={workspace_slug}",
-        f"POSTGRES_USER={workspace_slug}",
+        f"POSTGRES_DB={workspace_module}",
+        f"POSTGRES_USER={workspace_module}",
         f"POSTGRES_PASSWORD={postgres_password}",
         "POSTGRES_HOST=postgres",
         "POSTGRES_PORT=5432",
-        f"PGDATABASE={workspace_slug}",
-        f"PGUSER={workspace_slug}",
+        f"PGDATABASE={workspace_module}",
+        f"PGUSER={workspace_module}",
         "PGHOST=postgres",
         "PGPORT=5432",
         f"PGPASSFILE={pgpass_path}",
@@ -212,12 +212,12 @@ def render_workspace_secret_env(workspace_slug: str, postgres_password: str) -> 
     ])
 
 
-def render_workspace_pgpass(workspace_slug: str, postgres_password: str) -> str:
-    return f"postgres:5432:{workspace_slug}:{workspace_slug}:{postgres_password}\n"
+def render_workspace_pgpass(workspace_module: str, postgres_password: str) -> str:
+    return f"postgres:5432:{workspace_module}:{workspace_module}:{postgres_password}\n"
 
 
-def render_workspace_shell_environment(workspace_slug: str) -> str:
-    secret_path = container_workspace_secret_env_path(workspace_slug)
+def render_workspace_shell_environment(workspace_module: str) -> str:
+    secret_path = container_workspace_secret_env_path(workspace_module)
     return "\n".join([
         "# >>> just-build workspace secrets >>>",
         f'if [ -f "{secret_path}" ]; then',
@@ -230,13 +230,14 @@ def render_workspace_shell_environment(workspace_slug: str) -> str:
     ])
 
 
-def read_workspace_secret_environment(workspace_slug: str) -> dict[str, str]:
-    secret_path = workspace_secret_env_path(workspace_slug)
-    if not secret_path.exists():
-        raise RuntimeError(f"Workspace '{workspace_slug}' is missing its secret file at {secret_path}")
+def read_workspace_secret_environment(ctx: Context, workspace_module: str) -> dict[str, str]:
+    secret_path = container_workspace_secret_env_path(workspace_module)
+    result = docker_exec(ctx, f"cat {quote(secret_path)}", user="root", hide=True, warn=True)
+    if not result.ok:
+        raise RuntimeError(f"Workspace '{workspace_module}' is missing or cannot read its secret file at {secret_path}")
 
     environment: dict[str, str] = {}
-    for line in secret_path.read_text().splitlines():
+    for line in result.stdout.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -248,12 +249,12 @@ def read_workspace_secret_environment(workspace_slug: str) -> dict[str, str]:
     return environment
 
 
-def ensure_workspace_secret_file(ctx: Context, workspace_slug: str) -> Path:
+def ensure_workspace_secret_file(ctx: Context, workspace_module: str) -> Path:
     ensure_workspace_secret_root()
 
-    secret_dir = workspace_secret_dir(workspace_slug)
-    secret_path = workspace_secret_env_path(workspace_slug)
-    pgpass_path = workspace_pgpass_path(workspace_slug)
+    secret_dir = workspace_secret_dir(workspace_module)
+    secret_path = workspace_secret_env_path(workspace_module)
+    pgpass_path = workspace_pgpass_path(workspace_module)
     if secret_path.exists():
         raise RuntimeError(f"Refusing to overwrite existing workspace secret file at {secret_path}")
     if pgpass_path.exists():
@@ -262,50 +263,50 @@ def ensure_workspace_secret_file(ctx: Context, workspace_slug: str) -> Path:
     secret_dir.mkdir(parents=True, exist_ok=False)
     secret_dir.chmod(0o700)
     postgres_password = token_urlsafe(32)
-    write_text_file(secret_path, render_workspace_secret_env(workspace_slug, postgres_password))
-    write_text_file(pgpass_path, render_workspace_pgpass(workspace_slug, postgres_password))
+    write_text_file(secret_path, render_workspace_secret_env(workspace_module, postgres_password))
+    write_text_file(pgpass_path, render_workspace_pgpass(workspace_module, postgres_password))
     secret_path.chmod(0o600)
     pgpass_path.chmod(0o600)
 
-    quoted_dir = quote(f"{WORKSPACES_SECRETS_DIR}/{workspace_slug}")
-    quoted_owner = f"{quote(workspace_slug)}:{quote(workspace_slug)}"
-    quoted_pgpass = quote(container_workspace_pgpass_path(workspace_slug))
+    quoted_dir = quote(f"{WORKSPACES_SECRETS_DIR}/{workspace_module}")
+    quoted_owner = f"{quote(workspace_module)}:{quote(workspace_module)}"
+    quoted_pgpass = quote(container_workspace_pgpass_path(workspace_module))
     docker_exec(
         ctx,
-        f"test -f {quote(container_workspace_secret_env_path(workspace_slug))}"
-        f" && chown -R root:{quote(workspace_slug)} {quoted_dir}"
+        f"test -f {quote(container_workspace_secret_env_path(workspace_module))}"
+        f" && chown -R root:{quote(workspace_module)} {quoted_dir}"
         f" && chmod 750 {quoted_dir}"
-        f" && chmod 640 {quote(container_workspace_secret_env_path(workspace_slug))}"
+        f" && chmod 640 {quote(container_workspace_secret_env_path(workspace_module))}"
         f" && chown {quoted_owner} {quoted_pgpass}"
         f" && chmod 600 {quoted_pgpass}",
     )
     return secret_path
 
 
-def install_workspace_shell_environment(ctx: Context, workspace_slug: str) -> None:
-    quoted_slug = quote(workspace_slug)
-    quoted_content = quote(render_workspace_shell_environment(workspace_slug))
+def install_workspace_shell_environment(ctx: Context, workspace_module: str) -> None:
+    quoted_module = quote(workspace_module)
+    quoted_content = quote(render_workspace_shell_environment(workspace_module))
     for name in (".profile", ".bashrc"):
-        path = quote(f"/home/{workspace_slug}/{name}")
+        path = quote(f"/home/{workspace_module}/{name}")
         docker_exec(
             ctx,
             f"printf '%s' {quoted_content} > {path}"
-            f" && chown {quoted_slug}:{quoted_slug} {path}"
+            f" && chown {quoted_module}:{quoted_module} {path}"
             f" && chmod 644 {path}",
         )
 
 
-def ensure_workspace_static_dir(ctx: Context, workspace_slug: str) -> None:
-    quoted_slug = quote(workspace_slug)
-    quoted_home_dir = quote(f"/home/{workspace_slug}")
-    quoted_static_dir = quote(f"/home/{workspace_slug}/staticfiles")
+def ensure_workspace_static_dir(ctx: Context, workspace_module: str) -> None:
+    quoted_module = quote(workspace_module)
+    quoted_home_dir = quote(f"/home/{workspace_module}")
+    quoted_static_dir = quote(f"/home/{workspace_module}/staticfiles")
     quoted_state_dir = quote(WORKSPACES_STATE_DIR)
     docker_exec(
         ctx,
-        f"groupmod -P {quoted_state_dir} -a -U www-data {quoted_slug}"
+        f"groupmod -P {quoted_state_dir} -a -U www-data {quoted_module}"
         f" && cp -a {quoted_state_dir}/etc/group /etc/group"
         f" && mkdir -p {quoted_static_dir}"
-        f" && chown {quoted_slug}:{quoted_slug} {quoted_home_dir} {quoted_static_dir}"
+        f" && chown {quoted_module}:{quoted_module} {quoted_home_dir} {quoted_static_dir}"
         f" && chmod 750 {quoted_home_dir} {quoted_static_dir}",
     )
 
@@ -321,23 +322,23 @@ def docker_exec(ctx: Context, script: str, *, user: str | None = None, hide: boo
     return ctx.run(command, echo=not hide, hide=hide, warn=warn)
 
 
-def assert_container_workspace_absent(ctx: Context, workspace_slug: str) -> None:
-    result = docker_exec(ctx, f"id -u {quote(workspace_slug)}", hide=True, warn=True)
+def assert_container_workspace_absent(ctx: Context, workspace_module: str) -> None:
+    result = docker_exec(ctx, f"id -u {quote(workspace_module)}", hide=True, warn=True)
     if result.ok:
         raise RuntimeError(
-            f"Refusing to create workspace because user '{workspace_slug}' already exists in workspaces"
+            f"Refusing to create workspace because user '{workspace_module}' already exists in workspaces"
         )
 
     ssh_key_result = docker_exec(
         ctx,
-        f"test ! -e /etc/ssh/authorized_keys/{quote(workspace_slug)}",
+        f"test ! -e /etc/ssh/authorized_keys/{quote(workspace_module)}",
         hide=True,
         warn=True,
     )
     if not ssh_key_result.ok:
         raise RuntimeError(
             "Refusing to create workspace because "
-            f"/etc/ssh/authorized_keys/{workspace_slug} already exists in workspaces"
+            f"/etc/ssh/authorized_keys/{workspace_module} already exists in workspaces"
         )
 
 
@@ -355,19 +356,22 @@ def sync_workspace_state_account_files(ctx: Context) -> None:
     _ = docker_exec(ctx, f"cp -a {account_files} /etc/")
 
 
-def create_container_user_and_home(ctx: Context, workspace_slug: str) -> None:
-    quoted_slug = quote(workspace_slug)
+def create_container_user_and_home(ctx: Context, workspace_module: str) -> None:
+    quoted_module = quote(workspace_module)
     quoted_state_dir = quote(WORKSPACES_STATE_DIR)
 
     ensure_workspace_state_account_files(ctx)
-    docker_exec(ctx, f"groupadd -P {quoted_state_dir} {quoted_slug}")
-    docker_exec(ctx, f"useradd -P {quoted_state_dir} -M -s /bin/bash -g {quoted_slug} {quoted_slug}")
+    docker_exec(ctx, f"groupadd -P {quoted_state_dir} {quoted_module}")
+    docker_exec(ctx, f"useradd -P {quoted_state_dir} -M -s /bin/bash -g {quoted_module} {quoted_module}")
     sync_workspace_state_account_files(ctx)
-    docker_exec(ctx, f"mkdir -p /home/{quoted_slug} && chown -R {quoted_slug}:{quoted_slug} /home/{quoted_slug}")
+    docker_exec(
+        ctx,
+        f"mkdir -p /home/{quoted_module} && chown -R {quoted_module}:{quoted_module} /home/{quoted_module}",
+    )
 
 
-def publish_authorized_key(ctx: Context, workspace_slug: str, public_key: str) -> None:
-    quoted_slug = quote(workspace_slug)
+def publish_authorized_key(ctx: Context, workspace_module: str, public_key: str) -> None:
+    quoted_module = quote(workspace_module)
     quoted_key = quote(public_key)
 
     directory_state = docker_exec(
@@ -385,19 +389,19 @@ def publish_authorized_key(ctx: Context, workspace_slug: str, public_key: str) -
 
     docker_exec(
         ctx,
-        f"printf '%s\\n' {quoted_key} > /etc/ssh/authorized_keys/{quoted_slug}"
-        f" && test \"$(stat -c '%U:%G %a' /etc/ssh/authorized_keys/{quoted_slug})\" = 'root:root 644'",
+        f"printf '%s\\n' {quoted_key} > /etc/ssh/authorized_keys/{quoted_module}"
+        f" && test \"$(stat -c '%U:%G %a' /etc/ssh/authorized_keys/{quoted_module})\" = 'root:root 644'",
     )
 
 
 def stage_workspace_configs(workspace: WorkspaceRecord, domain: str) -> tuple[Path, Path]:
-    workspace_port = next_workspace_port(workspace.slug)
+    workspace_port = next_workspace_port(workspace.module)
     asgi_module = f"{workspace.django_module}.asgi"
 
     supervisor_config = render_template(
         SUPERVISOR_TEMPLATE_PATH,
         {
-            "PROJECT_NAME": workspace.slug,
+            "PROJECT_NAME": workspace.module,
             "PROJECT_PORT": str(workspace_port),
             "ASGI_MODULE": asgi_module,
             "DJANGO_MODULE": workspace.django_module,
@@ -408,22 +412,22 @@ def stage_workspace_configs(workspace: WorkspaceRecord, domain: str) -> tuple[Pa
     nginx_config = render_template(
         NGINX_TEMPLATE_PATH,
         {
-            "PROJECT_NAME": workspace.slug,
+            "PROJECT_NAME": workspace.module,
             "PROJECT_PORT": str(workspace_port),
             "PROJECT_DOMAIN": domain,
         },
     )
     nginx_config = "# Automatically generated by invoke workspaces.create.\n" + nginx_config
 
-    supervisor_path = staged_supervisor_config_path(workspace.slug)
-    nginx_path = staged_nginx_config_path(workspace.slug)
+    supervisor_path = staged_supervisor_config_path(workspace.module)
+    nginx_path = staged_nginx_config_path(workspace.module)
     write_text_file(supervisor_path, supervisor_config)
     write_text_file(nginx_path, nginx_config)
     return supervisor_path, nginx_path
 
 
-def log_setup_step(workspace_slug: str, step: str) -> None:
-    patch_workspace(workspace_slug, setup={step: timestamp()})
+def log_setup_step(workspace_module: str, step: str) -> None:
+    patch_workspace(workspace_module, setup={step: timestamp()})
 
 
 def refresh_generated_ssh_config() -> None:
@@ -436,7 +440,7 @@ def refresh_generated_ssh_config() -> None:
 def build_ssh_connection(workspace: WorkspaceRecord) -> Connection:
     identity_file = workspace.ssh.identity_file
     if not identity_file:
-        raise RuntimeError(f"Workspace '{workspace.slug}' does not have SSH identity metadata yet.")
+        raise RuntimeError(f"Workspace '{workspace.module}' does not have SSH identity metadata yet.")
 
     private_key = Path(identity_file)
     if not private_key.is_absolute():
@@ -444,7 +448,7 @@ def build_ssh_connection(workspace: WorkspaceRecord) -> Connection:
 
     return Connection(
         host=workspace.ssh.host or DEFAULT_HOST,
-        user=workspace.ssh.user or workspace.slug,
+        user=workspace.ssh.user or workspace.module,
         port=workspace.ssh.port or DEFAULT_SSH_PORT,
         connect_kwargs={"key_filename": [str(private_key)]},
     )
@@ -454,5 +458,5 @@ def require_setup_steps(workspace: WorkspaceRecord, steps: tuple[str, ...]) -> N
     missing_steps = [step for step in steps if step not in workspace.setup]
     if missing_steps:
         raise RuntimeError(
-            f"Workspace '{workspace.slug}' is missing required setup steps: {', '.join(sorted(missing_steps))}"
+            f"Workspace '{workspace.module}' is missing required setup steps: {', '.join(sorted(missing_steps))}"
         )

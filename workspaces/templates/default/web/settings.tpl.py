@@ -3,7 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(Path("/workspaces/secrets/{{ workspace.slug }}/.env"))
+load_dotenv(Path("/workspaces/secrets/{{ workspace.module }}/.env"))
 load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = "django-insecure-local-development-only"
@@ -58,8 +58,8 @@ WSGI_APPLICATION = "web.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("POSTGRES_DB", "{{ workspace.slug }}"),
-        "USER": os.environ.get("POSTGRES_USER", "{{ workspace.slug }}"),
+        "NAME": os.environ.get("POSTGRES_DB", "{{ workspace.module }}"),
+        "USER": os.environ.get("POSTGRES_USER", "{{ workspace.module }}"),
         "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
         "HOST": os.environ.get("POSTGRES_HOST", "127.0.0.1"),
         "PORT": os.environ.get("POSTGRES_PORT", "5432"),

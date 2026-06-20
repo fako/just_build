@@ -1,8 +1,8 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "references": {
-    "{{ workspace.slug }}": {
-      "path": "/home/{{ workspace.slug }}",
+    "{{ workspace.module }}": {
+      "path": "/home/{{ workspace.module }}",
       "description": "Use for the {{ workspace.name }} project repository."
     }
   }

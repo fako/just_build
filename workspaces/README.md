@@ -39,14 +39,18 @@ invoke workspaces.setup
 docker compose --profile workspaces up --build
 
 # Create the workspace, SSH access, and staged configs
-invoke workspaces.create --name="My Workspace" --slug=myworkspace
+invoke workspaces.create --name="My Workspace" --module=my_workspace
 
 # Initialize git, Django, and workspace templates over SSH as the workspace user
-invoke workspaces.init --workspace-slug=myworkspace
+invoke workspaces.init --workspace-module=my_workspace
 
 # Enable the staged configs after initialization
-invoke workspaces.enable --workspace-slug=myworkspace
+invoke workspaces.enable --workspace-module=my_workspace
 ```
+
+The module is the canonical workspace identifier and is used for Linux users, home directories, databases, SSH, and
+supervisor. Its URL-safe slug is generated automatically with underscores converted to hyphens, so `my_workspace`
+uses `my-workspace.localhost` by default.
 
 ## Directory Structure
 
@@ -77,9 +81,9 @@ workspaces/
 For the common SSH-first workflow, use:
 
 ```bash
-invoke workspaces.create --name="My Workspace" --slug=myworkspace
-invoke workspaces.init --workspace-slug=myworkspace
-invoke workspaces.enable --workspace-slug=myworkspace
+invoke workspaces.create --name="My Workspace" --module=my_workspace
+invoke workspaces.init --workspace-module=my_workspace
+invoke workspaces.enable --workspace-module=my_workspace
 ```
 
 The commands do the following:
@@ -91,7 +95,7 @@ By default, `workspaces.init` applies the `default` template from `workspaces/te
 the comma-separated order provided, so later templates overwrite files from earlier templates:
 
 ```bash
-invoke workspaces.init --workspace-slug=myworkspace --templates=default,custom
+invoke workspaces.init --workspace-module=my_workspace --templates=default,custom
 ```
 
 ### 1. Create Database
@@ -159,12 +163,12 @@ starts, so users survive container rebuilds and recreates.
 
 The workspaces container exposes SSH on port 2222 for remote development with Cursor or other editors. To enable SSH access for a project user:
 
-Run `invoke workspaces.create --name="My Workspace" --slug=myworkspace` to generate a workspace SSH keypair and publish
+Run `invoke workspaces.create --name="My Workspace" --module=my_workspace` to generate a workspace SSH keypair and publish
 the public key into the container-managed `authorized_keys` volume automatically.
 
 The container uses an internal Docker volume for `/etc/ssh/authorized_keys/`, and sshd is configured to look for
 `/etc/ssh/authorized_keys/%u` (where `%u` is the username). The private key remains on the host under
-`workspaces/ssh/keys/src/<project-slug>/` so Cursor, Fabric, and local SSH tooling can use it.
+`workspaces/ssh/keys/src/<workspace-module>/` so Cursor, Fabric, and local SSH tooling can use it.
 
 The generated public key is published inside the container by `workspaces.create`, and the Python CLI expects the
 `/etc/ssh/authorized_keys` directory permissions to come from the image/container environment rather than fixing
@@ -209,13 +213,13 @@ Host myproject-workspace
 
 ### 4. Initialize Project Repository
 
-The project home lives under `workspaces/src/repos/<project-slug>/` and is mounted to `/home/<project-slug>/`
+The project home lives under `workspaces/src/repos/<workspace-module>/` and is mounted to `/home/<workspace-module>/`
 inside the container.
 
 Initialize it over SSH as the project user with:
 
 ```bash
-invoke workspaces.init --workspace-slug=myworkspace
+invoke workspaces.init --workspace-module=my_workspace
 ```
 
 This command initializes git, sets local commit identity, runs `django-admin startproject <django_module> .`,
@@ -298,7 +302,7 @@ server {
 After `workspaces.init` has finished successfully, activate the staged configs with:
 
 ```bash
-invoke workspaces.enable --workspace-slug=myworkspace
+invoke workspaces.enable --workspace-module=my_workspace
 ```
 
 ### 8. Local DNS Setup

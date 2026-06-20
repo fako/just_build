@@ -6,31 +6,31 @@ from workspaces.cli.client import get_workspace
 from workspaces.cli.common import build_ssh_connection, log_setup_step, require_setup_steps
 
 
-def ensure_pyproject_exists(conn, repo_dir: str, workspace_slug: str) -> None:
+def ensure_pyproject_exists(conn, repo_dir: str, workspace_module: str) -> None:
     result = conn.run(f"test -f {quote(repo_dir)}/pyproject.toml", hide=True, warn=True)
     if not result.ok:
-        raise RuntimeError(f"Workspace '{workspace_slug}' does not have a pyproject.toml at {repo_dir}")
+        raise RuntimeError(f"Workspace '{workspace_module}' does not have a pyproject.toml at {repo_dir}")
 
 
-def install_pyproject_dependencies(conn, repo_dir: str, workspace_slug: str) -> None:
-    ensure_pyproject_exists(conn, repo_dir, workspace_slug)
+def install_pyproject_dependencies(conn, repo_dir: str, workspace_module: str) -> None:
+    ensure_pyproject_exists(conn, repo_dir, workspace_module)
     quoted_repo_dir = quote(repo_dir)
     conn.run(f"cd {quoted_repo_dir} && python3 -m venv venv --copies --upgrade-deps", echo=True)
     conn.run(f"cd {quoted_repo_dir} && venv/bin/python -m pip install -e .", echo=True)
 
 
-@task(help={"workspace_slug": "Existing workspace slug created and initialized earlier"})
-def update(ctx, workspace_slug: str):
+@task(help={"workspace_module": "Existing workspace module created and initialized earlier"})
+def update(ctx, workspace_module: str):
     """Create/update the workspace venv from pyproject.toml."""
-    workspace = get_workspace(workspace_slug)
+    workspace = get_workspace(workspace_module)
     require_setup_steps(workspace, ("workspace_created", "home_created", "ssh_access"))
 
-    repo_dir = f"/home/{workspace.slug}"
+    repo_dir = f"/home/{workspace.module}"
     conn = build_ssh_connection(workspace)
-    install_pyproject_dependencies(conn, repo_dir, workspace.slug)
-    log_setup_step(workspace.slug, "dependencies_updated")
+    install_pyproject_dependencies(conn, repo_dir, workspace.module)
+    log_setup_step(workspace.module, "dependencies_updated")
 
     print("")
-    print(f"Updated dependencies for {workspace.name} ({workspace.slug}).")
+    print(f"Updated dependencies for {workspace.name} ({workspace.module}).")
     print("Next step:")
-    print(f"  invoke workspaces.enable --workspace-slug={workspace.slug}")
+    print(f"  invoke workspaces.enable --workspace-module={workspace.module}")

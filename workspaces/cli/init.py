@@ -20,13 +20,13 @@ DEFAULT_TEMPLATES = ("default",)
 TEMPLATE_ENV = Environment(autoescape=False, keep_trailing_newline=True, undefined=StrictUndefined)
 
 
-def ensure_git_repo(conn, repo_dir: str, workspace_name: str, workspace_slug: str) -> None:
+def ensure_git_repo(conn, repo_dir: str, workspace_name: str, workspace_module: str) -> None:
     result = conn.run(f"test -d {quote(repo_dir)}/.git", hide=True, warn=True)
     if not result.ok:
         conn.run(f"git init {quote(repo_dir)}", echo=True)
 
     conn.run(f"git -C {quote(repo_dir)} config user.name {quote(workspace_name)}", echo=True)
-    conn.run(f"git -C {quote(repo_dir)} config user.email {quote(workspace_slug)}@workspace.local", echo=True)
+    conn.run(f"git -C {quote(repo_dir)} config user.email {quote(workspace_module)}@workspace.local", echo=True)
 
 
 def ensure_django_project(conn, repo_dir: str, django_module: str) -> bool:
@@ -43,11 +43,11 @@ def ensure_django_project(conn, repo_dir: str, django_module: str) -> bool:
 
 
 def ensure_workspace_database(ctx: Context, workspace: WorkspaceRecord) -> None:
-    secret_environment = read_workspace_secret_environment(workspace.slug)
+    secret_environment = read_workspace_secret_environment(ctx, workspace.module)
     required_keys = ("POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD")
     missing_keys = [key for key in required_keys if key not in secret_environment]
     if missing_keys:
-        raise RuntimeError(f"Workspace '{workspace.slug}' is missing secret values: {', '.join(missing_keys)}")
+        raise RuntimeError(f"Workspace '{workspace.module}' is missing secret values: {', '.join(missing_keys)}")
 
     ctx.run(
         "./services/postgres/scripts/setup_database.sh",
@@ -188,38 +188,38 @@ def ensure_initial_commit(conn, repo_dir: str) -> bool:
 
 @task(
     help={
-        "workspace_slug": "Existing workspace slug created by workspaces.create",
+        "workspace_module": "Existing workspace module created by workspaces.create",
         "templates": "Comma-separated template names to layer in order, defaults to default.",
     },
 )
-def init(ctx, workspace_slug: str, templates: str = "default"):
+def init(ctx, workspace_module: str, templates: str = "default"):
     """Initialize git and Django over SSH as the workspace user."""
-    workspace = get_workspace(workspace_slug)
+    workspace = get_workspace(workspace_module)
     require_setup_steps(workspace, ("workspace_created", "home_created", "secrets_created", "ssh_access"))
 
-    repo_dir = f"/home/{workspace.slug}"
+    repo_dir = f"/home/{workspace.module}"
     conn = build_ssh_connection(workspace)
 
     if "database_created" not in workspace.setup:
         ensure_workspace_database(ctx, workspace)
-        log_setup_step(workspace.slug, "database_created")
+        log_setup_step(workspace.module, "database_created")
 
-    ensure_git_repo(conn, repo_dir, workspace.name, workspace.slug)
-    log_setup_step(workspace.slug, "git_initialized")
+    ensure_git_repo(conn, repo_dir, workspace.name, workspace.module)
+    log_setup_step(workspace.module, "git_initialized")
 
     django_initialized = ensure_django_project(conn, repo_dir, workspace.django_module)
     if django_initialized:
-        log_setup_step(workspace.slug, "django_initialized")
+        log_setup_step(workspace.module, "django_initialized")
 
     template_names = copy_workspace_templates(conn, repo_dir, templates, workspace)
-    log_setup_step(workspace.slug, "templates_resolved")
+    log_setup_step(workspace.module, "templates_resolved")
 
     initial_commit = ensure_initial_commit(conn, repo_dir)
     if initial_commit:
-        log_setup_step(workspace.slug, "initial_commit")
+        log_setup_step(workspace.module, "initial_commit")
 
     print("")
-    print(f"Initialized workspace {workspace.name} ({workspace.slug}) over SSH.")
+    print(f"Initialized workspace {workspace.name} ({workspace.module}) over SSH.")
     print(f"Templates resolved: {', '.join(template_names)}")
     print("Next step:")
-    print(f"  invoke workspaces.update --workspace-slug={workspace.slug}")
+    print(f"  invoke workspaces.update --workspace-module={workspace.module}")

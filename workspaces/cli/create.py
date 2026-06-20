@@ -24,54 +24,53 @@ from workspaces.cli.constants import WORKSPACES_DIR
 @task(
     help={
         "name": "Human-friendly workspace name",
-        "slug": "Unique workspace slug and Linux username",
+        "module": "Unique workspace module and Linux username",
         "domain": "Domain for the staged nginx config, defaults to <slug>.localhost",
         "django_module": "Django project module name, defaults to web",
     }
 )
-def create(ctx, name: str, slug: str, domain: str | None = None, django_module: str = "web"):
+def create(ctx, name: str, module: str, domain: str | None = None, django_module: str = "web"):
     """Create a workspace, SSH access, and staged configs."""
-    domain = domain or f"{slug}.localhost"
-
-    assert_workspace_state_clean(slug)
+    assert_workspace_state_clean(module)
     ensure_workspace_secret_root()
     ensure_workspaces_container(ctx)
-    assert_container_workspace_absent(ctx, slug)
+    assert_container_workspace_absent(ctx, module)
 
-    workspace = create_workspace(name=name, slug=slug, django_module=django_module)
-    log_setup_step(workspace.slug, "workspace_created")
+    workspace = create_workspace(name=name, module=module, django_module=django_module)
+    domain = domain or f"{workspace.slug}.localhost"
+    log_setup_step(workspace.module, "workspace_created")
 
-    create_container_user_and_home(ctx, workspace.slug)
-    log_setup_step(workspace.slug, "home_created")
+    create_container_user_and_home(ctx, workspace.module)
+    log_setup_step(workspace.module, "home_created")
 
-    secret_path = ensure_workspace_secret_file(ctx, workspace.slug)
-    install_workspace_shell_environment(ctx, workspace.slug)
-    log_setup_step(workspace.slug, "secrets_created")
+    secret_path = ensure_workspace_secret_file(ctx, workspace.module)
+    install_workspace_shell_environment(ctx, workspace.module)
+    log_setup_step(workspace.module, "secrets_created")
 
-    private_key, public_key = ensure_workspace_keypair(ctx, workspace.slug)
-    publish_authorized_key(ctx, workspace.slug, public_key.read_text().strip())
+    private_key, public_key = ensure_workspace_keypair(ctx, workspace.module)
+    publish_authorized_key(ctx, workspace.module, public_key.read_text().strip())
 
     patch_workspace(
-        workspace.slug,
+        workspace.module,
         ssh={
             "alias": f"{workspace.slug}-workspace",
-            "user": workspace.slug,
+            "user": workspace.module,
             "host": DEFAULT_HOST,
             "port": DEFAULT_SSH_PORT,
-            "identity_file": str(workspace_private_key_path(workspace.slug).relative_to(WORKSPACES_DIR.parent)),
+            "identity_file": str(workspace_private_key_path(workspace.module).relative_to(WORKSPACES_DIR.parent)),
         },
     )
-    log_setup_step(workspace.slug, "ssh_access")
+    log_setup_step(workspace.module, "ssh_access")
 
     stage_workspace_configs(workspace, domain)
-    log_setup_step(workspace.slug, "config_staged")
+    log_setup_step(workspace.module, "config_staged")
 
     refresh_generated_ssh_config()
-    log_setup_step(workspace.slug, "ssh_config")
+    log_setup_step(workspace.module, "ssh_config")
 
     print("")
-    print(f"Created workspace {workspace.name} ({workspace.slug}).")
+    print(f"Created workspace {workspace.name} ({workspace.module}; {workspace.slug}).")
     print(f"Workspace secrets: {secret_path}")
     print(f"SSH private key: {private_key}")
     print("Next step:")
-    print(f"  invoke workspaces.init --workspace-slug={workspace.slug}")
+    print(f"  invoke workspaces.init --workspace-module={workspace.module}")

@@ -16,7 +16,7 @@ You are not required to use the full stack, but when picking a tool make sure th
 
 ## Python environment
 
-This workspace uses `venv` as the project virtual environment. Keep Python dependencies in `pyproject.toml`, then ask your human to `invoke workspaces.update --workspace-slug={{ workspace.slug }}` from the control repository or run the equivalent inside this workspace:
+This workspace uses `venv` as the project virtual environment. Keep Python dependencies in `pyproject.toml`, then ask your human to `invoke workspaces.update --workspace-module={{ workspace.module }}` from the control repository or run the equivalent inside this workspace:
 
 ```bash
 python3 -m venv venv --copies --upgrade-deps

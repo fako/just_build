@@ -19,16 +19,16 @@ def collect_static_files(conn, repo_dir: str) -> None:
     conn.run(f"cd {quoted_repo_dir} && venv/bin/python manage.py collectstatic --noinput", echo=True)
 
 
-def restart_workspace_program(ctx, workspace_slug: str) -> None:
+def restart_workspace_program(ctx, workspace_module: str) -> None:
     ensure_workspaces_container(ctx)
-    docker_exec(ctx, f"supervisorctl restart {quote(workspace_slug)}")
+    docker_exec(ctx, f"supervisorctl restart {quote(workspace_module)}")
     docker_exec(ctx, "nginx -s reload")
 
 
-@task(help={"workspace_slug": "Existing enabled workspace slug"})
-def sync(ctx, workspace_slug: str):
+@task(help={"workspace_module": "Existing enabled workspace module"})
+def sync(ctx, workspace_module: str):
     """Install dependencies, collect static files, and restart a workspace."""
-    workspace = get_workspace(workspace_slug)
+    workspace = get_workspace(workspace_module)
     require_setup_steps(
         workspace,
         (
@@ -42,14 +42,14 @@ def sync(ctx, workspace_slug: str):
         ),
     )
 
-    repo_dir = f"/home/{workspace.slug}"
+    repo_dir = f"/home/{workspace.module}"
     conn = build_ssh_connection(workspace)
-    install_pyproject_dependencies(conn, repo_dir, workspace.slug)
-    log_setup_step(workspace.slug, "dependencies_updated")
-    ensure_workspace_static_dir(ctx, workspace.slug)
+    install_pyproject_dependencies(conn, repo_dir, workspace.module)
+    log_setup_step(workspace.module, "dependencies_updated")
+    ensure_workspace_static_dir(ctx, workspace.module)
     collect_static_files(conn, repo_dir)
-    restart_workspace_program(ctx, workspace.slug)
-    log_setup_step(workspace.slug, "synced")
+    restart_workspace_program(ctx, workspace.module)
+    log_setup_step(workspace.module, "synced")
 
     print("")
-    print(f"Synced workspace {workspace.name} ({workspace.slug}).")
+    print(f"Synced workspace {workspace.name} ({workspace.module}).")

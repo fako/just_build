@@ -14,8 +14,9 @@ class RecordingConnection:
         self.commands: list[str] = []
         self.uploads: dict[str, str] = {}
 
-    def run(self, command: str, echo: bool = False) -> None:
+    def run(self, command: str, echo: bool = False, hide: bool = False, warn: bool = False):
         self.commands.append(command)
+        return SimpleNamespace(ok=False)
 
     def put(self, local: str, remote: str) -> None:
         self.uploads[remote] = Path(local).read_text(encoding="utf-8")
@@ -30,11 +31,13 @@ class RecordingContext:
         self.runs.append({"command": command, "env": env, "pty": pty, "echo": echo})
 
 
-def workspace_record(slug: str = "demo", *, setup: dict[str, str] | None = None) -> WorkspaceRecord:
+def workspace_record(module: str = "demo", *, slug: str | None = None,
+                     setup: dict[str, str] | None = None) -> WorkspaceRecord:
     return WorkspaceRecord(
         id="workspace-id",
         name="Demo Workspace",
-        slug=slug,
+        module=module,
+        slug=slug or module.replace("_", "-"),
         django_module="web",
         setup=setup or {},
         ssh=WorkspaceRecord.SSHConfig(),
@@ -50,21 +53,23 @@ def test_copy_template_files_traverses_directories_and_renders_templates(tmp_pat
     source_dir = tmp_path / "default"
     (source_dir / "web" / "empty").mkdir(parents=True)
     (source_dir / "web" / "settings.tpl.py").write_text(
-        'HOST = "{{ workspace.slug }}.localhost"\nNAME = "{{ slug }}"\n',
+        'HOST = "{{ workspace.slug }}.localhost"\nNAME = "{{ module }}"\n',
         encoding="utf-8",
     )
     (source_dir / "README.md").write_text("raw\n", encoding="utf-8")
 
     monkeypatch.setattr(init_cli, "template_dir", lambda template_name: source_dir)
-    workspace = workspace_record()
+    workspace = workspace_record("demo_module")
     conn = RecordingConnection()
 
-    init_cli.copy_template_files(conn, "/home/demo", "default", workspace)
+    init_cli.copy_template_files(conn, "/home/demo_module", "default", workspace)
 
-    assert conn.uploads["/home/demo/web/settings.py"] == 'HOST = "demo.localhost"\nNAME = "demo"\n'
-    assert conn.uploads["/home/demo/README.md"] == "raw\n"
-    assert "test -d /home/demo/web || mkdir -p /home/demo/web" in conn.commands
-    assert "test -d /home/demo/web/empty || mkdir -p /home/demo/web/empty" in conn.commands
+    assert conn.uploads["/home/demo_module/web/settings.py"] == (
+        'HOST = "demo-module.localhost"\nNAME = "demo_module"\n'
+    )
+    assert conn.uploads["/home/demo_module/README.md"] == "raw\n"
+    assert "test -d /home/demo_module/web || mkdir -p /home/demo_module/web" in conn.commands
+    assert "test -d /home/demo_module/web/empty || mkdir -p /home/demo_module/web/empty" in conn.commands
 
 
 def test_default_opencode_template_uses_workspace_reference_without_server_credentials() -> None:
@@ -82,9 +87,9 @@ def test_ensure_workspace_database_uses_generated_workspace_secrets(monkeypatch)
     monkeypatch.setattr(
         init_cli,
         "read_workspace_secret_environment",
-        lambda workspace_slug: {
-            "POSTGRES_DB": workspace_slug,
-            "POSTGRES_USER": workspace_slug,
+        lambda ctx, workspace_module: {
+            "POSTGRES_DB": workspace_module,
+            "POSTGRES_USER": workspace_module,
             "POSTGRES_PASSWORD": "workspace-password",
             "POSTGRES_HOST": "postgres",
             "POSTGRES_PORT": "5432",
@@ -117,7 +122,7 @@ def test_ensure_workspace_database_requires_password_secret(monkeypatch) -> None
     monkeypatch.setattr(
         init_cli,
         "read_workspace_secret_environment",
-        lambda workspace_slug: {"POSTGRES_DB": workspace_slug, "POSTGRES_USER": workspace_slug},
+        lambda ctx, workspace_module: {"POSTGRES_DB": workspace_module, "POSTGRES_USER": workspace_module},
     )
 
     with pytest.raises(RuntimeError, match="POSTGRES_PASSWORD"):

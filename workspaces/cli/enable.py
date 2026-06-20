@@ -17,10 +17,10 @@ from workspaces.cli.common import (
 )
 
 
-@task(help={"workspace_slug": "Existing workspace slug created and initialized earlier"})
-def enable(ctx, workspace_slug: str):
+@task(help={"workspace_module": "Existing workspace module created and initialized earlier"})
+def enable(ctx, workspace_module: str):
     """Enable staged nginx and supervisor configs for a workspace."""
-    workspace = get_workspace(workspace_slug)
+    workspace = get_workspace(workspace_module)
     require_setup_steps(
         workspace,
         (
@@ -35,22 +35,22 @@ def enable(ctx, workspace_slug: str):
         ),
     )
 
-    staged_supervisor = staged_supervisor_config_path(workspace.slug)
-    staged_nginx = staged_nginx_config_path(workspace.slug)
+    staged_supervisor = staged_supervisor_config_path(workspace.module)
+    staged_nginx = staged_nginx_config_path(workspace.module)
     if not staged_supervisor.exists() or not staged_nginx.exists():
-        raise RuntimeError(f"Staged configs are missing for workspace '{workspace.slug}'")
+        raise RuntimeError(f"Staged configs are missing for workspace '{workspace.module}'")
 
-    publish_staged_file(staged_supervisor, active_supervisor_config_path(workspace.slug))
-    publish_staged_file(staged_nginx, active_nginx_config_path(workspace.slug))
+    publish_staged_file(staged_supervisor, active_supervisor_config_path(workspace.module))
+    publish_staged_file(staged_nginx, active_nginx_config_path(workspace.module))
 
     ensure_workspaces_container(ctx)
     docker_exec(ctx, "supervisorctl reread")
     docker_exec(ctx, "supervisorctl update")
     docker_exec(ctx, "nginx -s reload")
-    log_setup_step(workspace.slug, "enabled")
+    log_setup_step(workspace.module, "enabled")
 
     domain = parse_workspace_domain(staged_nginx)
     print("")
-    print(f"Enabled staged configs for {workspace.name} ({workspace.slug}).")
+    print(f"Enabled staged configs for {workspace.name} ({workspace.module}).")
     print(f'Verify with a host header: curl -H "Host: {domain}" http://{DEFAULT_HOST}:{DEFAULT_PROXY_PORT}/')
     print(f"Or open in a browser after hosts setup: http://{domain}:{DEFAULT_PROXY_PORT}/")

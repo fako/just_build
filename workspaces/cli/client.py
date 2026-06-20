@@ -14,6 +14,7 @@ class ManagementClientError(RuntimeError):
 class WorkspaceRecord(BaseModel):
     id: str
     name: str
+    module: str
     slug: str
     django_module: str
     setup: dict[str, str]
@@ -28,41 +29,41 @@ class WorkspaceRecord(BaseModel):
     ssh: SSHConfig
 
 
-def _workspace_url(workspace_slug: str) -> str:
-    return f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/workspaces/{workspace_slug}/"
+def _workspace_url(workspace_module: str) -> str:
+    return f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/workspaces/{workspace_module}/"
 
 
-def create_workspace(name: str, slug: str, django_module: str = "web") -> WorkspaceRecord:
+def create_workspace(name: str, module: str, django_module: str = "web") -> WorkspaceRecord:
     try:
         response = requests.post(
             f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/workspaces/",
-            json={"name": name, "slug": slug, "django_module": django_module},
+            json={"name": name, "module": module, "django_module": django_module},
             timeout=10,
         )
     except requests.RequestException as exc:
-        raise ManagementClientError(f"Could not create workspace '{slug}': {exc}") from exc
+        raise ManagementClientError(f"Could not create workspace '{module}': {exc}") from exc
 
     if response.status_code == 409:
-        raise ManagementClientError(f"Workspace '{slug}' already exists.")
+        raise ManagementClientError(f"Workspace '{module}' already exists.")
 
     try:
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise ManagementClientError(f"Could not create workspace '{slug}': {exc}") from exc
+        raise ManagementClientError(f"Could not create workspace '{module}': {exc}") from exc
 
     return WorkspaceRecord.model_validate(response.json())
 
 
-def get_workspace(workspace_slug: str) -> WorkspaceRecord:
+def get_workspace(workspace_module: str) -> WorkspaceRecord:
     try:
-        response = requests.get(_workspace_url(workspace_slug), timeout=10)
+        response = requests.get(_workspace_url(workspace_module), timeout=10)
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise ManagementClientError(f"Could not fetch workspace '{workspace_slug}': {exc}") from exc
+        raise ManagementClientError(f"Could not fetch workspace '{workspace_module}': {exc}") from exc
     return WorkspaceRecord.model_validate(response.json())
 
 
-def patch_workspace(workspace_slug: str, *, setup: dict[str, str] | None = None,
+def patch_workspace(workspace_module: str, *, setup: dict[str, str] | None = None,
                     ssh: dict[str, str | int] | None = None) -> WorkspaceRecord:
     payload: dict[str, object] = {}
     if setup:
@@ -71,10 +72,10 @@ def patch_workspace(workspace_slug: str, *, setup: dict[str, str] | None = None,
         payload["ssh"] = ssh
 
     try:
-        response = requests.patch(_workspace_url(workspace_slug), json=payload, timeout=10)
+        response = requests.patch(_workspace_url(workspace_module), json=payload, timeout=10)
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise ManagementClientError(f"Could not update workspace '{workspace_slug}': {exc}") from exc
+        raise ManagementClientError(f"Could not update workspace '{workspace_module}': {exc}") from exc
     return WorkspaceRecord.model_validate(response.json())
 
 
