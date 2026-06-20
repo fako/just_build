@@ -22,6 +22,33 @@ def test_collect_static_files_runs_collectstatic_through_workspace_venv() -> Non
     ]
 
 
+def test_reset_workspace_ownership_runs_recursively_as_root(monkeypatch) -> None:
+    calls: list[tuple[object, str, dict[str, object]]] = []
+    ctx = object()
+
+    monkeypatch.setattr(
+        sync_cli,
+        "ensure_workspaces_container",
+        lambda received_ctx: calls.append((received_ctx, "up", {})),
+    )
+    monkeypatch.setattr(
+        sync_cli,
+        "docker_exec",
+        lambda received_ctx, command, **kwargs: calls.append((received_ctx, command, kwargs)),
+    )
+
+    sync_cli.reset_workspace_ownership(ctx, "datagrowth_django")
+
+    assert calls == [
+        (ctx, "up", {}),
+        (
+            ctx,
+            "chown -R datagrowth_django:datagrowth_django /home/datagrowth_django",
+            {"user": "root"},
+        ),
+    ]
+
+
 def test_restart_workspace_program_restarts_supervisor_program(monkeypatch) -> None:
     calls: list[tuple[object, str]] = []
     ctx = object()

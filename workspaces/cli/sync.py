@@ -19,6 +19,17 @@ def collect_static_files(conn, repo_dir: str) -> None:
     conn.run(f"cd {quoted_repo_dir} && venv/bin/python manage.py collectstatic --noinput", echo=True)
 
 
+def reset_workspace_ownership(ctx, workspace_module: str) -> None:
+    ensure_workspaces_container(ctx)
+    quoted_module = quote(workspace_module)
+    quoted_home = quote(f"/home/{workspace_module}")
+    docker_exec(
+        ctx,
+        f"chown -R {quoted_module}:{quoted_module} {quoted_home}",
+        user="root",
+    )
+
+
 def restart_workspace_program(ctx, workspace_module: str) -> None:
     ensure_workspaces_container(ctx)
     docker_exec(ctx, f"supervisorctl restart {quote(workspace_module)}")
@@ -43,6 +54,7 @@ def sync(ctx, workspace_module: str):
     )
 
     repo_dir = f"/home/{workspace.module}"
+    reset_workspace_ownership(ctx, workspace.module)
     conn = build_ssh_connection(workspace)
     install_pyproject_dependencies(conn, repo_dir, workspace.module)
     log_setup_step(workspace.module, "dependencies_updated")
