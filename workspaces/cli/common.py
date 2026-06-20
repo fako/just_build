@@ -228,6 +228,12 @@ def render_workspace_shell_environment(workspace_module: str) -> str:
         "fi",
         "# <<< just-build workspace secrets <<<",
         "",
+        "# >>> just-build workspace virtualenv >>>",
+        'if [ -z "${VIRTUAL_ENV:-}" ] && [ -f "$HOME/venv/bin/activate" ]; then',
+        '    . "$HOME/venv/bin/activate"',
+        "fi",
+        "# <<< just-build workspace virtualenv <<<",
+        "",
     ])
 
 

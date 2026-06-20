@@ -25,6 +25,15 @@ def test_render_workspace_pgpass_uses_generated_postgres_credentials() -> None:
     )
 
 
+def test_render_workspace_shell_environment_loads_secrets_and_activates_venv() -> None:
+    content = common.render_workspace_shell_environment("demo")
+
+    assert '. "/workspaces/secrets/demo/.env"' in content
+    assert '[ -z "${VIRTUAL_ENV:-}" ]' in content
+    assert '[ -f "$HOME/venv/bin/activate" ]' in content
+    assert '. "$HOME/venv/bin/activate"' in content
+
+
 def test_read_workspace_secret_environment_reads_as_container_root(monkeypatch) -> None:
     calls: list[dict[str, object]] = []
     ctx = object()
