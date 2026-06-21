@@ -1,4 +1,6 @@
 # OS + home exclusions
+.local
+.config
 .bashrc
 .bash_history
 .bash_logout
