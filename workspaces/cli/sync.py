@@ -10,6 +10,7 @@ from workspaces.cli.common import (
     ensure_workspaces_container,
     log_setup_step,
     require_setup_steps,
+    reset_workspace_ownership,
     stop_workspace_program,
 )
 from workspaces.cli.update import install_pyproject_dependencies
@@ -18,17 +19,6 @@ from workspaces.cli.update import install_pyproject_dependencies
 def collect_static_files(conn, repo_dir: str) -> None:
     quoted_repo_dir = quote(repo_dir)
     conn.run(f"cd {quoted_repo_dir} && venv/bin/python manage.py collectstatic --noinput", echo=True)
-
-
-def reset_workspace_ownership(ctx, workspace_module: str) -> None:
-    ensure_workspaces_container(ctx)
-    quoted_module = quote(workspace_module)
-    quoted_home = quote(f"/home/{workspace_module}")
-    docker_exec(
-        ctx,
-        f"chown -R {quoted_module}:{quoted_module} {quoted_home}",
-        user="root",
-    )
 
 
 def restart_workspace_program(ctx, workspace_module: str) -> None:

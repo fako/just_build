@@ -1,4 +1,5 @@
 import importlib
+from pathlib import Path
 from types import SimpleNamespace
 
 from workspaces.cli.client import WorkspaceRecord
@@ -75,6 +76,11 @@ def test_grant_host_workspace_access_sets_access_and_inherited_acls(monkeypatch)
             **kwargs,
         }),
     )
+    monkeypatch.setattr(
+        common,
+        "workspace_secret_dir",
+        lambda workspace_module: Path(f"/nonexistent/{workspace_module}"),
+    )
 
     common.grant_host_workspace_access(ctx, "datagrowth_django", host_uid=1000)
 
@@ -86,6 +92,45 @@ def test_grant_host_workspace_access_sets_access_and_inherited_acls(monkeypatch)
         ),
         "user": "root",
     }]
+
+
+def test_reset_workspace_ownership_chowns_home_and_reapplies_host_acl(monkeypatch) -> None:
+    calls: list[tuple[object, str, dict[str, object]]] = []
+    grants: list[str] = []
+    ctx = object()
+
+    monkeypatch.setattr(
+        common,
+        "ensure_workspaces_container",
+        lambda received_ctx: calls.append((received_ctx, "up", {})),
+    )
+    monkeypatch.setattr(
+        common,
+        "docker_exec",
+        lambda received_ctx, command, **kwargs: calls.append((received_ctx, command, kwargs)),
+    )
+    monkeypatch.setattr(
+        common,
+        "grant_host_workspace_access",
+        lambda received_ctx, workspace_module: grants.append(workspace_module),
+    )
+
+    common.reset_workspace_ownership(ctx, "datagrowth_django")
+
+    assert grants == ["datagrowth_django"]
+    assert calls == [
+        (ctx, "up", {}),
+        (
+            ctx,
+            "chown -R datagrowth_django:datagrowth_django /home/datagrowth_django"
+            " && if [ -d /workspaces/secrets/datagrowth_django ]; then"
+            " chown -R root:datagrowth_django /workspaces/secrets/datagrowth_django"
+            " && if [ -f /workspaces/secrets/datagrowth_django/.pgpass ]; then"
+            " chown datagrowth_django:datagrowth_django /workspaces/secrets/datagrowth_django/.pgpass;"
+            " fi; fi",
+            {"user": "root"},
+        ),
+    ]
 
 
 def test_stage_workspace_configs_uses_module_for_runtime_and_slug_for_domain(tmp_path, monkeypatch) -> None:

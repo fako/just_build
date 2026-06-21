@@ -385,12 +385,35 @@ def create_container_user_and_home(ctx: Context, workspace_module: str) -> None:
 def grant_host_workspace_access(ctx: Context, workspace_module: str, host_uid: int | None = None) -> None:
     uid = getuid() if host_uid is None else host_uid
     quoted_home = quote(f"/home/{workspace_module}")
+    script = (
+        f"setfacl -R -m u:{uid}:rwX {quoted_home}"
+        f" && find {quoted_home} -type d -exec setfacl -m d:u:{uid}:rwX {{}} +"
+    )
+    if workspace_secret_dir(workspace_module).exists():
+        quoted_secrets = quote(f"{WORKSPACES_SECRETS_DIR}/{workspace_module}")
+        script += (
+            f" && setfacl -R -m u:{uid}:rwX {quoted_secrets}"
+            f" && find {quoted_secrets} -type d -exec setfacl -m d:u:{uid}:rwX {{}} +"
+        )
+    docker_exec(ctx, script, user="root")
+
+
+def reset_workspace_ownership(ctx: Context, workspace_module: str) -> None:
+    ensure_workspaces_container(ctx)
+    quoted_module = quote(workspace_module)
+    quoted_home = quote(f"/home/{workspace_module}")
+    quoted_secrets_dir = quote(f"{WORKSPACES_SECRETS_DIR}/{workspace_module}")
+    quoted_pgpass = quote(container_workspace_pgpass_path(workspace_module))
     docker_exec(
         ctx,
-        f"setfacl -R -m u:{uid}:rwX {quoted_home}"
-        f" && find {quoted_home} -type d -exec setfacl -m d:u:{uid}:rwX {{}} +",
+        f"chown -R {quoted_module}:{quoted_module} {quoted_home}"
+        f" && if [ -d {quoted_secrets_dir} ]; then"
+        f" chown -R root:{quoted_module} {quoted_secrets_dir}"
+        f" && if [ -f {quoted_pgpass} ]; then chown {quoted_module}:{quoted_module} {quoted_pgpass}; fi;"
+        f" fi",
         user="root",
     )
+    grant_host_workspace_access(ctx, workspace_module)
 
 
 def publish_authorized_key(ctx: Context, workspace_module: str, public_key: str) -> None:

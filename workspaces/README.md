@@ -52,8 +52,9 @@ The module is the canonical workspace identifier and is used for Linux users, ho
 supervisor. Its URL-safe slug is generated automatically with underscores converted to hyphens, so `my_workspace`
 uses `my-workspace.localhost` by default.
 
-During creation, the workspace home receives an ACL granting the host user that ran the command read/write access.
-The default ACL is inherited by new files and directories while container ownership remains with the workspace user.
+During creation, the workspace home and secrets directory receive an ACL granting the host user that ran the
+command read/write access. The default ACL is inherited by new files and directories while container ownership
+remains with the workspace user.
 
 ## Directory Structure
 

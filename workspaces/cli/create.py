@@ -42,10 +42,10 @@ def create(ctx, name: str, module: str, domain: str | None = None, django_module
     log_setup_step(workspace.module, "workspace_created")
 
     create_container_user_and_home(ctx, workspace.module)
-    grant_host_workspace_access(ctx, workspace.module)
     log_setup_step(workspace.module, "home_created")
 
     secret_path = ensure_workspace_secret_file(ctx, workspace.module)
+    grant_host_workspace_access(ctx, workspace.module)
     install_workspace_shell_environment(ctx, workspace.module)
     log_setup_step(workspace.module, "secrets_created")
 
