@@ -29,7 +29,7 @@ from workspaces.cli.setup import ensure_ssh_host_keys
 DEFAULT_HOST = "localhost"
 DEFAULT_SSH_PORT = 2222
 DEFAULT_PROXY_PORT = 7000
-OPENCODE_ATTACH_URL = "http://127.0.0.1:4097"
+OPENCODE_ATTACH_URL = "http://127.0.0.1:4096"
 WORKSPACES_STATE_DIR = "/workspaces/state"
 WORKSPACES_SECRETS_DIR = "/workspaces/secrets"
 ACCOUNT_FILES = ("passwd", "group", "shadow", "gshadow")
