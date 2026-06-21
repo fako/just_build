@@ -150,7 +150,7 @@ def test_patch_workspace_setup_and_ssh_metadata(client):
                 "user": "acme",
                 "host": "localhost",
                 "port": 2222,
-                "identity_file": "workspaces/ssh/keys/src/acme/id_ed25519",
+                "identity_file": "workspaces/src/ssh/acme/id_ed25519",
             },
         },
         content_type="application/json",
@@ -167,7 +167,7 @@ def test_patch_workspace_setup_and_ssh_metadata(client):
         "user": "acme",
         "host": "localhost",
         "port": 2222,
-        "identity_file": "workspaces/ssh/keys/src/acme/id_ed25519",
+        "identity_file": "workspaces/src/ssh/acme/id_ed25519",
     }
 
     workspace.refresh_from_db()
@@ -178,7 +178,7 @@ def test_patch_workspace_setup_and_ssh_metadata(client):
         "user": "acme",
         "host": "localhost",
         "port": 2222,
-        "identity_file": "workspaces/ssh/keys/src/acme/id_ed25519",
+        "identity_file": "workspaces/src/ssh/acme/id_ed25519",
     }
 
 
@@ -206,7 +206,7 @@ def test_get_ssh_config(client, settings):
             "user": "acme",
             "host": "localhost",
             "port": 2222,
-            "identity_file": "workspaces/ssh/keys/src/acme/id_ed25519",
+            "identity_file": "workspaces/src/ssh/acme/id_ed25519",
         },
     )
     Workspace.objects.create(name="No SSH", module="no_ssh")
@@ -223,7 +223,7 @@ def test_get_ssh_config(client, settings):
         "    HostName localhost\n"
         "    Port 2222\n"
         "    User acme\n"
-        f"    IdentityFile {settings.BASE_DIR.parent / 'workspaces/ssh/keys/src/acme/id_ed25519'}\n"
+        f"    IdentityFile {settings.BASE_DIR.parent / 'workspaces/src/ssh/acme/id_ed25519'}\n"
     )
 
 

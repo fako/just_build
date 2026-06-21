@@ -30,7 +30,7 @@ Content-Type: application/json
     "user": "acme",
     "host": "localhost",
     "port": 2222,
-    "identity_file": "workspaces/ssh/keys/src/acme/id_ed25519"
+    "identity_file": "workspaces/src/ssh/acme/id_ed25519"
   }
 }
 

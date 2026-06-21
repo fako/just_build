@@ -73,6 +73,7 @@ workspaces/
 │   └── keys/                # Container host keys (private gitignored)
 └── src/
     ├── nginx/               # Workspace nginx configs (gitignored)
+    ├── ssh/                 # Workspace SSH keypairs (gitignored)
     ├── staged/              # Staged configs waiting to be enabled
     ├── supervisor/          # Workspace supervisor configs (gitignored)
     └── repos/               # Workspace git repositories → /home/
@@ -192,7 +193,7 @@ the public key into the container-managed `authorized_keys` volume automatically
 
 The container uses an internal Docker volume for `/etc/ssh/authorized_keys/`, and sshd is configured to look for
 `/etc/ssh/authorized_keys/%u` (where `%u` is the username). The private key remains on the host under
-`workspaces/ssh/keys/src/<workspace-module>/` so Cursor, Fabric, and local SSH tooling can use it.
+`workspaces/src/ssh/<workspace-module>/` so Cursor, Fabric, and local SSH tooling can use it.
 
 The generated public key is published inside the container by `workspaces.create`, and the Python CLI expects the
 `/etc/ssh/authorized_keys` directory permissions to come from the image/container environment rather than fixing
@@ -201,7 +202,7 @@ them at runtime.
 You can test access directly with:
 
 ```bash
-ssh -i workspaces/ssh/keys/src/myproject/id_ed25519 myproject@localhost -p 2222
+ssh -i workspaces/src/ssh/myproject/id_ed25519 myproject@localhost -p 2222
 ```
 
 **Connecting with Cursor Remote SSH**
@@ -232,7 +233,7 @@ Host myproject-workspace
     HostName localhost
     Port 2222
     User myproject
-    IdentityFile /absolute/path/to/just_build/workspaces/ssh/keys/src/myproject/id_ed25519
+    IdentityFile /absolute/path/to/just_build/workspaces/src/ssh/myproject/id_ed25519
 ```
 
 ### 4. Initialize Project Repository
