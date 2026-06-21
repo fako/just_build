@@ -72,8 +72,12 @@ class RequestsExtractor:
             "url": request_url,
             "headers": dict(headers),
         }
-        if signature.method.lower() != "get" and signature.mode != DataMode.NONE:
-            if signature.mode == DataMode.JSON:
+        if signature.method.lower() != "get":
+            if signature.mode == DataMode.NONE:
+                data = signature.get_data()
+                if data:
+                    request_kwargs["data"] = data
+            elif signature.mode == DataMode.JSON:
                 request_kwargs["data"] = signature.get_data()
                 request_kwargs["headers"]["Content-Type"] = "application/json; charset=utf-8"
             elif signature.mode == DataMode.DATA:
@@ -83,7 +87,7 @@ class RequestsExtractor:
                 form_data: dict[str, str] = {}
                 form_files: dict[str, tuple[str, bytes, str]] = {}
                 for part in parts:
-                    if "content_type" in part:
+                    if part.get("content_type") is not None:
                         form_files[part["name"]] = (
                             part.get("filename", part["name"]), part["content"], part["content_type"]
                         )
