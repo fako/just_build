@@ -3,7 +3,7 @@ from shlex import quote
 from invoke.tasks import task
 
 from workspaces.cli.client import get_workspace
-from workspaces.cli.common import build_ssh_connection, log_setup_step, require_setup_steps
+from workspaces.cli.common import build_ssh_connection, log_setup_step, require_setup_steps, stop_workspace_program
 
 
 def ensure_pyproject_exists(conn, repo_dir: str, workspace_module: str) -> None:
@@ -15,7 +15,10 @@ def ensure_pyproject_exists(conn, repo_dir: str, workspace_module: str) -> None:
 def install_pyproject_dependencies(conn, repo_dir: str, workspace_module: str) -> None:
     ensure_pyproject_exists(conn, repo_dir, workspace_module)
     quoted_repo_dir = quote(repo_dir)
-    conn.run(f"cd {quoted_repo_dir} && python3 -m venv venv --copies --upgrade-deps", echo=True)
+    conn.run(
+        f"cd {quoted_repo_dir} && rm -rf venv && python3 -m venv venv --copies --upgrade-deps",
+        echo=True,
+    )
     conn.run(f"cd {quoted_repo_dir} && venv/bin/python -m pip install -e .", echo=True)
 
 
@@ -26,6 +29,7 @@ def update(ctx, workspace_module: str):
     require_setup_steps(workspace, ("workspace_created", "home_created", "ssh_access"))
 
     repo_dir = f"/home/{workspace.module}"
+    stop_workspace_program(ctx, workspace.module, warn=True)
     conn = build_ssh_connection(workspace)
     install_pyproject_dependencies(conn, repo_dir, workspace.module)
     log_setup_step(workspace.module, "dependencies_updated")

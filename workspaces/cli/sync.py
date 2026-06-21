@@ -10,6 +10,7 @@ from workspaces.cli.common import (
     ensure_workspaces_container,
     log_setup_step,
     require_setup_steps,
+    stop_workspace_program,
 )
 from workspaces.cli.update import install_pyproject_dependencies
 
@@ -55,6 +56,7 @@ def sync(ctx, workspace_module: str):
 
     repo_dir = f"/home/{workspace.module}"
     reset_workspace_ownership(ctx, workspace.module)
+    stop_workspace_program(ctx, workspace.module)
     conn = build_ssh_connection(workspace)
     install_pyproject_dependencies(conn, repo_dir, workspace.module)
     log_setup_step(workspace.module, "dependencies_updated")

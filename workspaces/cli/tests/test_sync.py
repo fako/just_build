@@ -71,3 +71,26 @@ def test_restart_workspace_program_restarts_supervisor_program(monkeypatch) -> N
         (ctx, "supervisorctl restart demo"),
         (ctx, "nginx -s reload"),
     ]
+
+
+def test_stop_workspace_program_stops_supervisor_program(monkeypatch) -> None:
+    calls: list[tuple[object, str, dict[str, object]]] = []
+    ctx = object()
+
+    monkeypatch.setattr(
+        sync_cli,
+        "ensure_workspaces_container",
+        lambda received_ctx: calls.append((received_ctx, "up", {})),
+    )
+    monkeypatch.setattr(
+        sync_cli,
+        "docker_exec",
+        lambda received_ctx, command, **kwargs: calls.append((received_ctx, command, kwargs)),
+    )
+
+    sync_cli.stop_workspace_program(ctx, "demo")
+
+    assert calls == [
+        (ctx, "up", {}),
+        (ctx, "supervisorctl stop demo", {}),
+    ]

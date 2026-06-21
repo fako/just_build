@@ -329,6 +329,11 @@ def docker_exec(ctx: Context, script: str, *, user: str | None = None, hide: boo
     return ctx.run(command, echo=not hide, hide=hide, warn=warn)
 
 
+def stop_workspace_program(ctx: Context, workspace_module: str, *, warn: bool = False) -> None:
+    ensure_workspaces_container(ctx)
+    docker_exec(ctx, f"supervisorctl stop {quote(workspace_module)}", warn=warn)
+
+
 def assert_container_workspace_absent(ctx: Context, workspace_module: str) -> None:
     result = docker_exec(ctx, f"id -u {quote(workspace_module)}", hide=True, warn=True)
     if result.ok:

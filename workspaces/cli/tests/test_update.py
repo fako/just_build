@@ -27,7 +27,7 @@ def test_install_pyproject_dependencies_creates_venv_and_installs_editable_proje
     assert conn.commands == [
         {"command": "test -f /home/demo/pyproject.toml", "echo": False, "hide": True, "warn": True},
         {
-            "command": "cd /home/demo && python3 -m venv venv --copies --upgrade-deps",
+            "command": "cd /home/demo && rm -rf venv && python3 -m venv venv --copies --upgrade-deps",
             "echo": True,
             "hide": False,
             "warn": False,
