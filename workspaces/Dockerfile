@@ -23,6 +23,10 @@ RUN bash /tmp/opencode-install.sh --no-modify-path \
     && install -m 755 /root/.opencode/bin/opencode /usr/local/bin/opencode \
     && rm -rf /root/.opencode /tmp/opencode-install.sh
 
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && install -m 755 "$(readlink -f /root/.local/bin/claude)" /usr/local/bin/claude \
+    && rm -rf /root/.local /root/.claude /root/.cache/claude
+
 RUN mkdir -p /var/run/sshd \
     && mkdir -p /etc/ssh/authorized_keys \
     && chown root:root /etc/ssh/authorized_keys \
