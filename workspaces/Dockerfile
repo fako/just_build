@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     acl \
     less vim build-essential gettext \
     openssh-server \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=opencode install.sh /tmp/opencode-install.sh
