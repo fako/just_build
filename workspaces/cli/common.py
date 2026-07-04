@@ -256,6 +256,30 @@ def read_workspace_secret_environment(ctx: Context, workspace_module: str) -> di
     return environment
 
 
+def ensure_workspace_database(ctx: Context, workspace: WorkspaceRecord) -> None:
+    secret_environment = read_workspace_secret_environment(ctx, workspace.module)
+    required_keys = ("POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD")
+    missing_keys = [key for key in required_keys if key not in secret_environment]
+    if missing_keys:
+        raise RuntimeError(f"Workspace '{workspace.module}' is missing secret values: {', '.join(missing_keys)}")
+
+    ctx.run(
+        "./services/postgres/scripts/setup_database.sh",
+        env={
+            "DATABASE_NAME": secret_environment["POSTGRES_DB"],
+            "DATABASE_USER": secret_environment["POSTGRES_USER"],
+            "DATABASE_PASSWORD": secret_environment["POSTGRES_PASSWORD"],
+            "POSTGRES_USER": ctx.config.postgres.user,
+            "PGPASSWORD": ctx.config.postgres.password,
+            "POSTGRES_DB": getattr(ctx.config.postgres, "database", "postgres"),
+            "PGHOST": secret_environment.get("POSTGRES_HOST", "postgres"),
+            "PGPORT": secret_environment.get("POSTGRES_PORT", "5432"),
+        },
+        pty=True,
+        echo=True,
+    )
+
+
 def ensure_workspace_secret_file(ctx: Context, workspace_module: str) -> Path:
     ensure_workspace_secret_root()
 

@@ -2,15 +2,14 @@ from pathlib import Path
 from shlex import quote
 from tempfile import NamedTemporaryFile
 
-from invoke.context import Context
 from invoke.tasks import task
 from jinja2 import Environment, StrictUndefined
 
 from workspaces.cli.client import WorkspaceRecord, get_workspace
 from workspaces.cli.common import (
     build_ssh_connection,
+    ensure_workspace_database,
     log_setup_step,
-    read_workspace_secret_environment,
     require_setup_steps,
 )
 from workspaces.cli.constants import TEMPLATES_DIR
@@ -40,30 +39,6 @@ def ensure_django_project(conn, repo_dir: str, django_module: str) -> bool:
 
     conn.run(f"cd {quote(repo_dir)} && django-admin startproject {quote(django_module)} .", echo=True)
     return True
-
-
-def ensure_workspace_database(ctx: Context, workspace: WorkspaceRecord) -> None:
-    secret_environment = read_workspace_secret_environment(ctx, workspace.module)
-    required_keys = ("POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD")
-    missing_keys = [key for key in required_keys if key not in secret_environment]
-    if missing_keys:
-        raise RuntimeError(f"Workspace '{workspace.module}' is missing secret values: {', '.join(missing_keys)}")
-
-    ctx.run(
-        "./services/postgres/scripts/setup_database.sh",
-        env={
-            "DATABASE_NAME": secret_environment["POSTGRES_DB"],
-            "DATABASE_USER": secret_environment["POSTGRES_USER"],
-            "DATABASE_PASSWORD": secret_environment["POSTGRES_PASSWORD"],
-            "POSTGRES_USER": ctx.config.postgres.user,
-            "PGPASSWORD": ctx.config.postgres.password,
-            "POSTGRES_DB": getattr(ctx.config.postgres, "database", "postgres"),
-            "PGHOST": secret_environment.get("POSTGRES_HOST", "postgres"),
-            "PGPORT": secret_environment.get("POSTGRES_PORT", "5432"),
-        },
-        pty=True,
-        echo=True,
-    )
 
 
 def normalize_template_names(templates: list[str] | tuple[str, ...] | str | None) -> tuple[str, ...]:

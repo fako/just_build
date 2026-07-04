@@ -7,6 +7,7 @@ from workspaces.cli.client import WorkspaceRecord
 
 
 init_cli = importlib.import_module("workspaces.cli.init")
+common_cli = importlib.import_module("workspaces.cli.common")
 
 
 class RecordingConnection:
@@ -136,7 +137,7 @@ def test_default_opencode_template_uses_workspace_reference_without_server_crede
 
 def test_ensure_workspace_database_uses_generated_workspace_secrets(monkeypatch) -> None:
     monkeypatch.setattr(
-        init_cli,
+        common_cli,
         "read_workspace_secret_environment",
         lambda ctx, workspace_module: {
             "POSTGRES_DB": workspace_module,
@@ -148,7 +149,7 @@ def test_ensure_workspace_database_uses_generated_workspace_secrets(monkeypatch)
     )
     ctx = RecordingContext()
 
-    init_cli.ensure_workspace_database(ctx, workspace_record())
+    common_cli.ensure_workspace_database(ctx, workspace_record())
 
     assert ctx.runs == [
         {
@@ -171,10 +172,10 @@ def test_ensure_workspace_database_uses_generated_workspace_secrets(monkeypatch)
 
 def test_ensure_workspace_database_requires_password_secret(monkeypatch) -> None:
     monkeypatch.setattr(
-        init_cli,
+        common_cli,
         "read_workspace_secret_environment",
         lambda ctx, workspace_module: {"POSTGRES_DB": workspace_module, "POSTGRES_USER": workspace_module},
     )
 
     with pytest.raises(RuntimeError, match="POSTGRES_PASSWORD"):
-        init_cli.ensure_workspace_database(RecordingContext(), workspace_record())
+        common_cli.ensure_workspace_database(RecordingContext(), workspace_record())
