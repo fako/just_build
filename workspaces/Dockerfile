@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tar \
     ripgrep \
     postgresql-client \
+    redis-tools \
     acl \
     less vim build-essential gettext \
     openssh-server \
