@@ -315,6 +315,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
@@ -392,6 +393,9 @@ Example Django `config/settings.py`:
 import os
 
 ALLOWED_HOSTS = [os.environ.get('PROJECT_DOMAIN', 'localhost'), 'localhost']
+CSRF_TRUSTED_ORIGINS = [f"http://{os.environ.get('PROJECT_DOMAIN', 'localhost')}:7000"]
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
 
 DATABASES = {
     'default': {

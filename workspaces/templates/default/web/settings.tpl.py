@@ -16,6 +16,8 @@ ALLOWED_HOSTS = [
 CSRF_TRUSTED_ORIGINS = [
     "http://{{ workspace.slug }}.localhost:7000",
 ]
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
 
 INSTALLED_APPS = [
     "django.contrib.admin",
