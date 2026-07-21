@@ -62,17 +62,32 @@ ensure_safe_database_name "$TEST_DATABASE_NAME"
 drop_database_if_exists "$TEST_DATABASE_NAME"
 drop_database_if_exists "$DATABASE_NAME"
 
-# 2) If role exists: drop its objects in the control DB and drop the role
+# 2) If role exists: drop its objects in the control DB and try to drop the role.
+#    The role may own objects outside this workspace (e.g. a database created by
+#    another process), in which case DROP ROLE fails. That's non-fatal: we keep
+#    the existing role and just reset its password/attributes below.
 if [[ -n "$(psqlc "SELECT 1 FROM pg_roles WHERE rolname = '$DATABASE_USER'")" ]]; then
-  psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
-    "DROP OWNED BY \"$DATABASE_USER\" CASCADE;"
-  psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
-    "DROP ROLE \"$DATABASE_USER\";"
+  if ! psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+    "DROP OWNED BY \"$DATABASE_USER\" CASCADE;"; then
+    echo "Warning: could not drop objects owned by role '$DATABASE_USER' in '$POSTGRES_DB'. Continuing." >&2
+  fi
+
+  if ! psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+    "DROP ROLE \"$DATABASE_USER\";"; then
+    echo "Warning: could not drop role '$DATABASE_USER' (it likely still owns a database outside this workspace). Reusing the existing role instead." >&2
+  fi
 fi
 
-# 3) Recreate role and database (each statement autocommits)
-psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
-  "CREATE ROLE \"$DATABASE_USER\" LOGIN CREATEDB PASSWORD '$DATABASE_PASSWORD';"
+# 3) Recreate the role and databases (each statement autocommits). The role may
+# still exist from step 2 above, so fall back to ALTER ROLE to reset its
+# password/attributes rather than failing on a duplicate CREATE ROLE.
+if [[ -n "$(psqlc "SELECT 1 FROM pg_roles WHERE rolname = '$DATABASE_USER'")" ]]; then
+  psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+    "ALTER ROLE \"$DATABASE_USER\" LOGIN CREATEDB PASSWORD '$DATABASE_PASSWORD';"
+else
+  psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+    "CREATE ROLE \"$DATABASE_USER\" LOGIN CREATEDB PASSWORD '$DATABASE_PASSWORD';"
+fi
 
 psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
   "CREATE DATABASE \"$DATABASE_NAME\" OWNER \"$DATABASE_USER\";"
