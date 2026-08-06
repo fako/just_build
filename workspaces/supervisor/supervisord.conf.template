@@ -9,6 +9,14 @@ childlogdir=/var/log/supervisor
 file=/var/run/supervisor.sock
 chmod=0700
 
+; Reachable on the compose network so management can control processes without a docker socket or an
+; SSH connection. The password is substituted in by load_supervisor_secret.sh, which then unsets the
+; variable, because supervisord hands its own environment to every program it starts.
+[inet_http_server]
+port=0.0.0.0:9001
+username=management
+password=${WORKSPACES_SUPERVISOR_PASSWORD}
+
 [rpcinterface:supervisor]
 supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
 

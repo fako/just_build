@@ -11,6 +11,12 @@ opencode:
     username: "fako"
     password: "qwerty"
 
+workspaces:
+  supervisor:
+    url: "http://workspaces:9001/RPC2"
+    username: "management"
+    password: "qwerty"
+
 management:
   database:
     name: "management"

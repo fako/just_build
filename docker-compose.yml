@@ -70,6 +70,7 @@ services:
       - INVOKE_MANAGEMENT_DATABASE_NAME=${INVOKE_MANAGEMENT_DATABASE_NAME}
       - INVOKE_MANAGEMENT_DATABASE_USER=${INVOKE_MANAGEMENT_DATABASE_USER}
       - INVOKE_MANAGEMENT_DATABASE_PASSWORD=${INVOKE_MANAGEMENT_DATABASE_PASSWORD}
+      - INVOKE_WORKSPACES_SUPERVISOR_PASSWORD=${INVOKE_WORKSPACES_SUPERVISOR_PASSWORD}
     develop:
       watch:
         - action: rebuild
@@ -113,6 +114,8 @@ services:
     ports:
       - "127.0.0.1:7000:7000"
       - "127.0.0.1:2222:22"
+      # Supervisord RPC, on loopback so management can also drive it while running on the host.
+      - "127.0.0.1:9001:9001"
     volumes:
       - ./workspaces/src/repos:/home
       - ./workspaces/src/secrets:/workspaces/secrets
@@ -122,6 +125,7 @@ services:
       - workspaces_state:/workspaces/state
     environment:
       - OPENCODE_SERVER_PASSWORD=${INVOKE_OPENCODE_SERVER_PASSWORD}
+      - WORKSPACES_SUPERVISOR_PASSWORD=${INVOKE_WORKSPACES_SUPERVISOR_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy

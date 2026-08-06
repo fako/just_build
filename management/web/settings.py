@@ -152,3 +152,12 @@ GPGHOME = ENVIRONMENT.management.credentials.gpghome
 # The full control key, scheme prefix included, as used by the invoke CLI on the host.
 # When it is unset no caller can authenticate as control and the CLI receives a 401.
 CONTROL_API_KEY = ENVIRONMENT.management.security.api_key
+
+
+# Process control over the supervisord in the workspaces container. The URL resolves both from the
+# management container and from the host, where install.hosts-file maps the service names.
+
+SUPERVISOR_URL = ENVIRONMENT.workspaces.supervisor.url
+SUPERVISOR_USERNAME = ENVIRONMENT.workspaces.supervisor.username
+SUPERVISOR_PASSWORD = ENVIRONMENT.workspaces.supervisor.password
+SUPERVISOR_CLIENT = "runtimes.supervisor.XmlRpcSupervisorClient"
