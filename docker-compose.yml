@@ -50,6 +50,38 @@ services:
       timeout: 5s
       retries: 5
 
+  management:
+    # Deliberately not in the `services` profile: bringing up `services` alone leaves management free
+    # to run on the host with `python manage.py runserver` for debugging.
+    profiles: [control, workspaces]
+    build:
+      dockerfile: "Dockerfile"
+      context: ./management
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Code is baked into the image; these overlay it so host edits are live under uvicorn --reload.
+      - ./management:/management
+      - ./invoke.yml:/invoke.yml:ro
+    environment:
+      - INVOKE_MANAGEMENT_SECURITY_DEBUG=${INVOKE_MANAGEMENT_SECURITY_DEBUG}
+      - INVOKE_MANAGEMENT_SECURITY_SECRET_KEY=${INVOKE_MANAGEMENT_SECURITY_SECRET_KEY}
+      - INVOKE_MANAGEMENT_DATABASE_NAME=${INVOKE_MANAGEMENT_DATABASE_NAME}
+      - INVOKE_MANAGEMENT_DATABASE_USER=${INVOKE_MANAGEMENT_DATABASE_USER}
+      - INVOKE_MANAGEMENT_DATABASE_PASSWORD=${INVOKE_MANAGEMENT_DATABASE_PASSWORD}
+    develop:
+      watch:
+        - action: rebuild
+          path: ./management/requirements.txt
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8000'"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   opencode:
     profiles: [workspaces]
     build:

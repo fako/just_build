@@ -9,6 +9,7 @@ from invoke.collection import Collection
 from invoke.context import Context
 from invoke.exceptions import Exit
 from invoke.tasks import task
+from invoke.watchers import Responder, FailingResponder
 
 
 HOSTS_FILE = Path("/etc/hosts")
@@ -84,4 +85,54 @@ def hosts_file(ctx: Context) -> None:
     print(f"[install] Updated {HOSTS_FILE}")
 
 
-namespace = Collection("install", hosts_file)
+@task(name="management_database", help={
+    "recreate": "Recreates the database and role before migrating",
+    "force_password": "Sets this password for all superusers whose configured password is null",
+})
+def management_database(ctx: Context, recreate: bool = True, force_password: str | None = None) -> None:
+    """
+    Create the management database, migrate it, and create pre-configured superusers.
+
+    Runs on the host against the published PostgreSQL port, so it works whether management itself
+    runs in its container or as a development server on the host.
+    """
+    if recreate:
+        ctx.run(
+            "./services/postgres/scripts/setup_database.sh",
+            env={
+                "DATABASE_NAME": ctx.config.management.database.name,
+                "DATABASE_USER": ctx.config.management.database.user,
+                "DATABASE_PASSWORD": ctx.config.management.database.password,
+                "POSTGRES_USER": ctx.config.postgres.user,
+                "PGPASSWORD": ctx.config.postgres.password,
+                "POSTGRES_DB": getattr(ctx.config.postgres, "database", "postgres"),
+                "PGHOST": "postgres",
+                "PGPORT": "5432",
+            },
+            pty=True,
+            echo=True,
+        )
+    with ctx.cd("management"):
+        ctx.run("python manage.py migrate", pty=True, echo=True)
+        for user in ctx.config.management.superusers:
+            if user["password"] is None and force_password:
+                user["password"] = force_password
+            elif user["password"] is None:
+                user["password"] = getpass(f"Password for '{user['username']}': ")
+            watchers = [
+                FailingResponder(
+                    pattern=r"Error: That username is already taken\.",
+                    response="\x03",  # Ctrl+C
+                    sentinel="Username already exists, skipping user creation"
+                ),
+                Responder(pattern=r"Password:", response=f"{user['password']}\n"),
+                Responder(pattern=r"Password \(again\):", response=f"{user['password']}\n"),
+                Responder(pattern=r"Bypass password validation", response="y\n"),
+            ]
+            ctx.run(
+                f"python manage.py createsuperuser --username {user['username']} --email {user['email']}",
+                pty=True, echo=True, watchers=watchers, warn=True
+            )
+
+
+namespace = Collection("install", hosts_file, management_database)

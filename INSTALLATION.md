@@ -45,5 +45,35 @@ docker compose up --build -d
 And run the following to setup the management database that stores workspace details.
 
 ```bash
-invoke management.setup-database
+invoke install.management-database
 ```
+
+This runs on the host against the published PostgreSQL port, so it works the same whether management
+runs in its container or as a development server on your host.
+
+
+## Running management
+
+Management is a normal Django project and runs either way. Nothing in the CLI shells into its
+container, so pick whichever suits what you are doing.
+
+**In its container**, which is what the `control` and `workspaces` compose profiles do:
+
+```bash
+docker compose watch management
+```
+
+`watch` rebuilds the image when `management/requirements.txt` changes. Code changes are picked up
+straight away, because the repository is mounted over the image and uvicorn runs with `--reload`.
+
+**On the host**, for debugging with a real debugger attached, by leaving management out of the
+profile:
+
+```bash
+COMPOSE_PROFILES=services docker compose up -d
+source activate.sh
+cd management && python manage.py runserver
+```
+
+Both modes talk to the same database and reach the other containers by their service names, which
+`invoke install.hosts-file` has already made resolvable from the host.
