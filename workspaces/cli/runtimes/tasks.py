@@ -6,6 +6,8 @@ cannot: writing config files onto the host, and running commands inside a worksp
 """
 from __future__ import annotations
 
+import json
+
 from invoke.context import Context
 from invoke.tasks import task
 
@@ -30,11 +32,14 @@ def list_runtimes(ctx: Context, workspace_module: str | None = None):
         "type": "Runtime type, for example django or celery",
         "name": "Runtime name, unique within the workspace, for example web or worker",
         "port": "Fixed port for HTTP runtimes. Left out, management allocates the next free one.",
+        "configuration": 'Type specific configuration as JSON, for example \'{"concurrency": 4}\'',
     },
 )
-def add(ctx: Context, workspace_module: str, type: str, name: str, port: int | None = None):  # noqa: A002
+def add(ctx: Context, workspace_module: str, type: str, name: str, port: int | None = None,  # noqa: A002
+        configuration: str | None = None):
     """Add a runtime to a workspace. Enable it to put it on disk."""
-    runtime = client.create_runtime(workspace_module, type, name, port=port)
+    parsed = json.loads(configuration) if configuration else None
+    runtime = client.create_runtime(workspace_module, type, name, configuration=parsed, port=port)
 
     print("")
     print(f"Added {runtime.type} runtime '{runtime.name}' to workspace {workspace_module}.")
@@ -44,6 +49,34 @@ def add(ctx: Context, workspace_module: str, type: str, name: str, port: int | N
     print(f"Log file: {runtime.log_path}")
     print("Next step:")
     print(f"  invoke runtimes.enable --workspace-module={workspace_module} --name={runtime.name}")
+
+
+@task(help={
+    "workspace_module": "Workspace that owns the runtime",
+    "name": "Runtime name",
+    "configuration": 'Type specific configuration as JSON, for example \'{"concurrency": 4}\'',
+    "port": "Change the port of an HTTP runtime",
+})
+def configure(ctx: Context, workspace_module: str, name: str, configuration: str | None = None,
+              port: int | None = None):
+    """Replace a runtime's configuration. Apply afterwards to put the change on disk."""
+    runtime = resolve_runtime(workspace_module, name)
+
+    parsed: dict | None = None
+    if configuration is not None:
+        try:
+            parsed = json.loads(configuration)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Configuration is not valid JSON: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise RuntimeError("Configuration must be a JSON object.")
+
+    updated = client.patch_runtime(runtime.id, configuration=parsed, port=port)
+    if updated.is_enabled:
+        apply_configs(ctx)
+
+    print("")
+    print(f"Configured {updated.program_name}: {json.dumps(updated.configuration)}")
 
 
 @task(help={"workspace_module": "Workspace that owns the runtime", "name": "Runtime name"})

@@ -41,9 +41,6 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 RUN mkdir -p /var/log/supervisor \
     && mkdir -p /var/log/nginx \
     && mkdir -p /var/log/workspaces \
-    # Legacy log directory for workspaces that have not been adopted into runtimes yet.
-    # Drop this once `invoke runtimes.adopt` has run everywhere.
-    && mkdir -p /var/log/projects \
     && mkdir -p /etc/supervisor/conf.d \
     && mkdir -p /etc/nginx/conf.d \
     && mkdir -p /workspaces/state
