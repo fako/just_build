@@ -10,4 +10,6 @@ exclude =
     __pycache__,
     .venv,
     venv,
-    */migrations/*
+    */migrations/*,
+    # Agent-owned workspace repositories. Their code is not ours to lint.
+    workspaces/src

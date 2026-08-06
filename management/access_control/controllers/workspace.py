@@ -7,6 +7,7 @@ from django.http import HttpRequest, HttpResponse
 from ninja import ModelSchema, Router, Schema
 from ninja.errors import HttpError
 
+from access_control.authentication import Principal, control_api_key_auth
 from access_control.models import Workspace
 
 
@@ -50,9 +51,26 @@ class WorkspacePatchSchema(Schema):
     ssh: WorkspaceSSHPatchSchema | None = None
 
 
-def get_workspace_or_404(workspace_module: str) -> Workspace:
+class WorkspaceCreatedSchema(WorkspaceSchema):
+    """Workspace plus the plaintext API key, which is only ever returned here and from rotate-key."""
+    api_key: str
+
+
+class WorkspaceApiKeySchema(Schema):
+    module: str
+    api_key: str
+
+
+def get_workspace_or_404(request: HttpRequest, workspace_module: str) -> Workspace:
+    """
+    Resolve a workspace within the caller's scope.
+
+    Out-of-scope workspaces are indistinguishable from missing ones, so a workspace cannot confirm
+    that another workspace exists by asking for it.
+    """
+    principal: Principal = request.auth
     try:
-        return Workspace.objects.get(module=workspace_module)
+        return principal.workspaces().get(module=workspace_module)
     except Workspace.DoesNotExist as exc:
         raise HttpError(404, "Workspace not found") from exc
 
@@ -89,29 +107,40 @@ def build_ssh_config(workspaces: list[Workspace]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-@controller.post("/", response={201: WorkspaceSchema}, tags=["Workspaces"])
+@controller.post("/", response={201: WorkspaceCreatedSchema}, auth=control_api_key_auth, tags=["Workspaces"])
 def create_workspace(request: HttpRequest, data: WorkspaceCreateSchema) -> tuple[int, Workspace]:
+    workspace = Workspace(**data.model_dump())
+    api_key = workspace.issue_api_key()
     try:
-        workspace = Workspace.objects.create(**data.model_dump())
+        workspace.save()
     except IntegrityError as exc:
         raise HttpError(409, "Workspace already exists") from exc
+    workspace.api_key = api_key
     return 201, workspace
 
 
 @controller.get("/", response=list[WorkspaceSchema], tags=["Workspaces"])
 def list_workspaces(request: HttpRequest) -> list[Workspace]:
-    return list(Workspace.objects.order_by("name"))
+    return list(request.auth.workspaces().order_by("name"))
 
 
-@controller.get("/ssh-config/", tags=["Workspaces"])
+@controller.get("/ssh-config/", auth=control_api_key_auth, tags=["Workspaces"])
 def get_ssh_config(request: HttpRequest) -> HttpResponse:
     workspaces = list(Workspace.objects.order_by("name"))
     return HttpResponse(build_ssh_config(workspaces), content_type="text/plain; charset=utf-8")
 
 
-@controller.patch("/{workspace_module}/", response=WorkspaceSchema, tags=["Workspaces"])
+@controller.post("/{workspace_module}/rotate-key/", response=WorkspaceApiKeySchema, auth=control_api_key_auth,
+                 tags=["Workspaces"])
+def rotate_workspace_api_key(request: HttpRequest, workspace_module: str) -> WorkspaceApiKeySchema:
+    workspace = get_workspace_or_404(request, workspace_module)
+    api_key = workspace.issue_api_key()
+    return WorkspaceApiKeySchema(module=workspace.module, api_key=api_key)
+
+
+@controller.patch("/{workspace_module}/", response=WorkspaceSchema, auth=control_api_key_auth, tags=["Workspaces"])
 def patch_workspace(request: HttpRequest, workspace_module: str, data: WorkspacePatchSchema) -> Workspace:
-    workspace = get_workspace_or_404(workspace_module)
+    workspace = get_workspace_or_404(request, workspace_module)
     update_fields: list[str] = []
 
     payload = data.model_dump(exclude_none=True)
@@ -133,11 +162,11 @@ def patch_workspace(request: HttpRequest, workspace_module: str, data: Workspace
 
 @controller.get("/{workspace_module}/", response=WorkspaceSchema, tags=["Workspaces"])
 def get_workspace(request: HttpRequest, workspace_module: str) -> Workspace:
-    return get_workspace_or_404(workspace_module)
+    return get_workspace_or_404(request, workspace_module)
 
 
-@controller.delete("/{workspace_module}/", response={204: None}, tags=["Workspaces"])
+@controller.delete("/{workspace_module}/", response={204: None}, auth=control_api_key_auth, tags=["Workspaces"])
 def delete_workspace(request: HttpRequest, workspace_module: str) -> tuple[int, None]:
-    workspace = get_workspace_or_404(workspace_module)
+    workspace = get_workspace_or_404(request, workspace_module)
     workspace.delete()
     return 204, None

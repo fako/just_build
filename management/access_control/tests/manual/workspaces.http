@@ -1,8 +1,13 @@
 @baseUrl = http://127.0.0.1:8000
 @workspaceSlug = acme
+# The control key from .env (INVOKE_MANAGEMENT_SECURITY_API_KEY).
+@controlKey = control:00000000-0000-0000-0000-000000000000
+# A workspace key, as returned once by the create or rotate-key calls below.
+@workspaceKey = workspace:00000000-0000-0000-0000-000000000000
 
-### Create a workspace
+### Create a workspace, which returns its API key exactly once
 POST {{baseUrl}}/api/v1/workspaces/
+Authorization: Bearer {{controlKey}}
 Content-Type: application/json
 
 {
@@ -13,12 +18,19 @@ Content-Type: application/json
 
 ### List workspaces
 GET {{baseUrl}}/api/v1/workspaces/
+Authorization: Bearer {{controlKey}}
+
+### List workspaces as a workspace, which only ever returns itself
+GET {{baseUrl}}/api/v1/workspaces/
+Authorization: Bearer {{workspaceKey}}
 
 ### Get one workspace
 GET {{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/
+Authorization: Bearer {{controlKey}}
 
 ### Patch workspace setup and SSH metadata
 PATCH {{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/
+Authorization: Bearer {{controlKey}}
 Content-Type: application/json
 
 {
@@ -34,5 +46,13 @@ Content-Type: application/json
   }
 }
 
+### Rotate a workspace API key, retiring the previous one
+POST {{baseUrl}}/api/v1/workspaces/{{workspaceSlug}}/rotate-key/
+Authorization: Bearer {{controlKey}}
+
 ### Render aggregate SSH config
 GET {{baseUrl}}/api/v1/workspaces/ssh-config/
+Authorization: Bearer {{controlKey}}
+
+### Anonymous calls are rejected
+GET {{baseUrl}}/api/v1/workspaces/

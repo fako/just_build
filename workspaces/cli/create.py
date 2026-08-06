@@ -38,13 +38,16 @@ def create(ctx, name: str, module: str, domain: str | None = None, django_module
     assert_container_workspace_absent(ctx, module)
 
     workspace = create_workspace(name=name, module=module, django_module=django_module)
+    if not workspace.api_key:
+        raise RuntimeError(f"Management did not return an API key for workspace '{workspace.module}'.")
     domain = domain or f"{workspace.slug}.localhost"
     log_setup_step(workspace.module, "workspace_created")
 
     create_container_user_and_home(ctx, workspace.module)
     log_setup_step(workspace.module, "home_created")
 
-    secret_path = ensure_workspace_secret_file(ctx, workspace.module)
+    # The plaintext API key exists only in this response, so it has to reach the workspace .env now.
+    secret_path = ensure_workspace_secret_file(ctx, workspace.module, workspace.api_key)
     grant_host_workspace_access(ctx, workspace.module)
     install_workspace_shell_environment(ctx, workspace.module)
     log_setup_step(workspace.module, "secrets_created")

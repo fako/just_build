@@ -30,6 +30,8 @@ DEFAULT_HOST = "localhost"
 DEFAULT_SSH_PORT = 2222
 DEFAULT_PROXY_PORT = 7000
 OPENCODE_ATTACH_URL = "http://127.0.0.1:4096"
+# Workspaces reach management by compose service name, not through the host's published port.
+WORKSPACE_MANAGEMENT_URL = "http://management:8000"
 WORKSPACES_STATE_DIR = "/workspaces/state"
 WORKSPACES_SECRETS_DIR = "/workspaces/secrets"
 ACCOUNT_FILES = ("passwd", "group", "shadow", "gshadow")
@@ -195,9 +197,11 @@ def ensure_workspace_secret_root() -> None:
     SECRETS_DIR.chmod(0o711)
 
 
-def render_workspace_secret_env(workspace_module: str, postgres_password: str) -> str:
+def render_workspace_secret_env(workspace_module: str, postgres_password: str, api_key: str) -> str:
     pgpass_path = container_workspace_pgpass_path(workspace_module)
     return "\n".join([
+        f"MANAGEMENT_URL={WORKSPACE_MANAGEMENT_URL}",
+        f"WORKSPACE_API_KEY={api_key}",
         f"POSTGRES_DB={workspace_module}",
         f"POSTGRES_USER={workspace_module}",
         f"POSTGRES_PASSWORD={postgres_password}",
@@ -280,7 +284,7 @@ def ensure_workspace_database(ctx: Context, workspace: WorkspaceRecord) -> None:
     )
 
 
-def ensure_workspace_secret_file(ctx: Context, workspace_module: str) -> Path:
+def ensure_workspace_secret_file(ctx: Context, workspace_module: str, api_key: str) -> Path:
     ensure_workspace_secret_root()
 
     secret_dir = workspace_secret_dir(workspace_module)
@@ -294,7 +298,7 @@ def ensure_workspace_secret_file(ctx: Context, workspace_module: str) -> Path:
     secret_dir.mkdir(parents=True, exist_ok=False)
     secret_dir.chmod(0o700)
     postgres_password = token_urlsafe(32)
-    write_text_file(secret_path, render_workspace_secret_env(workspace_module, postgres_password))
+    write_text_file(secret_path, render_workspace_secret_env(workspace_module, postgres_password, api_key))
     write_text_file(pgpass_path, render_workspace_pgpass(workspace_module, postgres_password))
     secret_path.chmod(0o600)
     pgpass_path.chmod(0o600)

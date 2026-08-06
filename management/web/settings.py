@@ -133,3 +133,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Management service settings
 
 GPGHOME = ENVIRONMENT.management.credentials.gpghome
+
+# The full control key, scheme prefix included, as used by the invoke CLI on the host.
+# When it is unset no caller can authenticate as control and the CLI receives a 401.
+CONTROL_API_KEY = ENVIRONMENT.management.security.api_key

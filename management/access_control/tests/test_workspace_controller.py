@@ -4,8 +4,8 @@ from access_control.models import Workspace
 
 
 @pytest.mark.django_db
-def test_create_workspace(client):
-    response = client.post(
+def test_create_workspace(control_client):
+    response = control_client.post(
         "/api/v1/workspaces/",
         data={"name": "Data Growth Django", "module": "datagrowth_django"},
         content_type="application/json",
@@ -17,6 +17,7 @@ def test_create_workspace(client):
     assert response.json()["slug"] == "datagrowth-django"
     assert response.json()["django_module"] == "web"
     assert response.json()["setup"] == {}
+    assert response.json()["api_key"].startswith("workspace:")
     assert response.json()["ssh"] == {
         "alias": None,
         "user": None,
@@ -28,10 +29,10 @@ def test_create_workspace(client):
 
 
 @pytest.mark.django_db
-def test_create_workspace_conflict(client):
+def test_create_workspace_conflict(control_client):
     Workspace.objects.create(name="Acme", module="acme")
 
-    response = client.post(
+    response = control_client.post(
         "/api/v1/workspaces/",
         data={"name": "Acme Again", "module": "acme"},
         content_type="application/json",
@@ -42,11 +43,11 @@ def test_create_workspace_conflict(client):
 
 
 @pytest.mark.django_db
-def test_list_workspaces(client):
+def test_list_workspaces(control_client):
     workspace_a = Workspace.objects.create(name="Zulu", module="zulu")
     workspace_b = Workspace.objects.create(name="Alpha", module="alpha")
 
-    response = client.get("/api/v1/workspaces/")
+    response = control_client.get("/api/v1/workspaces/")
 
     assert response.status_code == 200
     assert response.json() == [
@@ -84,10 +85,10 @@ def test_list_workspaces(client):
 
 
 @pytest.mark.django_db
-def test_get_workspace(client):
+def test_get_workspace(control_client):
     workspace = Workspace.objects.create(name="Acme", module="acme")
 
-    response = client.get(f"/api/v1/workspaces/{workspace.module}/")
+    response = control_client.get(f"/api/v1/workspaces/{workspace.module}/")
 
     assert response.status_code == 200
     assert response.json() == {
@@ -108,38 +109,38 @@ def test_get_workspace(client):
 
 
 @pytest.mark.django_db
-def test_get_workspace_not_found(client):
-    response = client.get("/api/v1/workspaces/missing-workspace/")
+def test_get_workspace_not_found(control_client):
+    response = control_client.get("/api/v1/workspaces/missing-workspace/")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Workspace not found"}
 
 
 @pytest.mark.django_db
-def test_delete_workspace(client):
+def test_delete_workspace(control_client):
     workspace = Workspace.objects.create(name="Acme", module="acme")
 
-    response = client.delete(f"/api/v1/workspaces/{workspace.module}/")
+    response = control_client.delete(f"/api/v1/workspaces/{workspace.module}/")
 
     assert response.status_code == 204
     assert not Workspace.objects.filter(module="acme").exists()
 
 
 @pytest.mark.django_db
-def test_delete_workspace_not_found(client):
-    response = client.delete("/api/v1/workspaces/missing/")
+def test_delete_workspace_not_found(control_client):
+    response = control_client.delete("/api/v1/workspaces/missing/")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Workspace not found"}
 
 
 @pytest.mark.django_db
-def test_patch_workspace_setup_and_ssh_metadata(client):
+def test_patch_workspace_setup_and_ssh_metadata(control_client):
     workspace = Workspace.objects.create(
         name="Acme", module="acme", setup={"workspace_directory": "2026-03-25T10:00:00Z"}
     )
 
-    response = client.patch(
+    response = control_client.patch(
         f"/api/v1/workspaces/{workspace.module}/",
         data={
             "setup": {
@@ -183,8 +184,8 @@ def test_patch_workspace_setup_and_ssh_metadata(client):
 
 
 @pytest.mark.django_db
-def test_patch_workspace_not_found(client):
-    response = client.patch(
+def test_patch_workspace_not_found(control_client):
+    response = control_client.patch(
         "/api/v1/workspaces/missing-workspace/",
         data={"setup": {"ssh_access": "2026-03-25T11:00:00Z"}},
         content_type="application/json",
@@ -195,7 +196,7 @@ def test_patch_workspace_not_found(client):
 
 
 @pytest.mark.django_db
-def test_get_ssh_config(client, settings):
+def test_get_ssh_config(control_client, settings):
     settings.BASE_DIR = settings.BASE_DIR.parent / "management"
 
     Workspace.objects.create(
@@ -211,7 +212,7 @@ def test_get_ssh_config(client, settings):
     )
     Workspace.objects.create(name="No SSH", module="no_ssh")
 
-    response = client.get("/api/v1/workspaces/ssh-config/")
+    response = control_client.get("/api/v1/workspaces/ssh-config/")
 
     assert response.status_code == 200
     assert response["Content-Type"].startswith("text/plain")
@@ -228,10 +229,10 @@ def test_get_ssh_config(client, settings):
 
 
 @pytest.mark.django_db
-def test_patch_workspace_rejects_invalid_ssh_shape(client):
+def test_patch_workspace_rejects_invalid_ssh_shape(control_client):
     workspace = Workspace.objects.create(name="Acme", module="acme")
 
-    response = client.patch(
+    response = control_client.patch(
         f"/api/v1/workspaces/{workspace.module}/",
         data={"ssh": {"port": "not-a-port"}},
         content_type="application/json",
