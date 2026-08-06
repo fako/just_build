@@ -11,16 +11,12 @@ from invoke.context import Context
 
 from workspaces.cli.client import WorkspaceRecord, get_ssh_config, patch_workspace
 from workspaces.cli.constants import (
-    ACTIVE_NGINX_DIR,
-    ACTIVE_SUPERVISOR_DIR,
-    NGINX_TEMPLATE_PATH,
+    NGINX_DIR,
     REPOS_DIR,
     SECRETS_DIR,
     WORKSPACE_SSH_KEYS_DIR,
     SSH_CONFIG_PATH,
-    STAGED_NGINX_DIR,
-    STAGED_SUPERVISOR_DIR,
-    SUPERVISOR_TEMPLATE_PATH,
+    SUPERVISOR_DIR,
     WORKSPACES_DIR,
 )
 from workspaces.cli.setup import ensure_ssh_host_keys
@@ -41,67 +37,9 @@ def timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def render_template(template_path: Path, replacements: dict[str, str]) -> str:
-    content = template_path.read_text()
-    for key, value in replacements.items():
-        content = content.replace(key, value)
-    return content
-
-
 def write_text_file(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
-
-
-def publish_staged_file(staged_path: Path, active_path: Path) -> None:
-    if not staged_path.exists():
-        raise RuntimeError(f"Missing staged file {staged_path}")
-    write_text_file(active_path, staged_path.read_text())
-
-
-def extract_workspace_port(config_path: Path) -> int | None:
-    if not config_path.exists():
-        return None
-
-    for line in config_path.read_text().splitlines():
-        if "--port " not in line:
-            continue
-        port_fragment = line.split("--port ", 1)[1].split()[0]
-        if port_fragment.isdigit():
-            return int(port_fragment)
-
-    return None
-
-
-def next_workspace_port(workspace_module: str) -> int:
-    config_paths = [
-        ACTIVE_SUPERVISOR_DIR / f"{workspace_module}.conf",
-        STAGED_SUPERVISOR_DIR / f"{workspace_module}.conf",
-    ]
-    for config_path in config_paths:
-        existing_port = extract_workspace_port(config_path)
-        if existing_port is not None:
-            return existing_port
-
-    ports: set[int] = set()
-    for directory in (ACTIVE_SUPERVISOR_DIR, STAGED_SUPERVISOR_DIR):
-        for config_path in directory.glob("*.conf"):
-            port = extract_workspace_port(config_path)
-            if port is not None:
-                ports.add(port)
-
-    port = 8001
-    while port in ports:
-        port += 1
-    return port
-
-
-def parse_workspace_domain(config_path: Path) -> str:
-    for line in config_path.read_text().splitlines():
-        stripped = line.strip()
-        if stripped.startswith("server_name "):
-            return stripped.removeprefix("server_name ").rstrip(";")
-    raise RuntimeError(f"Could not determine workspace domain from {config_path}")
 
 
 def workspace_repo_dir(workspace_module: str) -> Path:
@@ -140,31 +78,13 @@ def workspace_public_key_path(workspace_module: str) -> Path:
     return workspace_key_dir(workspace_module) / "id_ed25519.pub"
 
 
-def staged_supervisor_config_path(workspace_module: str) -> Path:
-    return STAGED_SUPERVISOR_DIR / f"{workspace_module}.conf"
-
-
-def staged_nginx_config_path(workspace_module: str) -> Path:
-    return STAGED_NGINX_DIR / f"{workspace_module}.conf"
-
-
-def active_supervisor_config_path(workspace_module: str) -> Path:
-    return ACTIVE_SUPERVISOR_DIR / f"{workspace_module}.conf"
-
-
-def active_nginx_config_path(workspace_module: str) -> Path:
-    return ACTIVE_NGINX_DIR / f"{workspace_module}.conf"
-
-
 def assert_workspace_state_clean(workspace_module: str) -> None:
     paths_to_check = [
         workspace_repo_dir(workspace_module),
         workspace_secret_dir(workspace_module),
         workspace_key_dir(workspace_module),
-        staged_supervisor_config_path(workspace_module),
-        staged_nginx_config_path(workspace_module),
-        active_supervisor_config_path(workspace_module),
-        active_nginx_config_path(workspace_module),
+        SUPERVISOR_DIR / workspace_module,
+        NGINX_DIR / workspace_module,
     ]
 
     dirty_paths = [path for path in paths_to_check if path.exists()]
@@ -357,9 +277,22 @@ def docker_exec(ctx: Context, script: str, *, user: str | None = None, hide: boo
     return ctx.run(command, echo=not hide, hide=hide, warn=warn)
 
 
-def stop_workspace_program(ctx: Context, workspace_module: str, *, warn: bool = False) -> None:
-    ensure_workspaces_container(ctx)
-    docker_exec(ctx, f"supervisorctl stop {quote(workspace_module)}", warn=warn)
+def ensure_workspace_log_dir(ctx: Context, workspace_module: str) -> None:
+    """
+    Create the log directory supervisord writes into. It will not create parents itself.
+
+    Owned by root and readable by the workspace group, so a workspace can tail its own logs and
+    nobody else's.
+    """
+    quoted_module = quote(workspace_module)
+    quoted_log_dir = quote(f"/var/log/workspaces/{workspace_module}")
+    docker_exec(
+        ctx,
+        f"mkdir -p {quoted_log_dir}"
+        f" && chown root:{quoted_module} {quoted_log_dir}"
+        f" && chmod 750 {quoted_log_dir}",
+        user="root",
+    )
 
 
 def assert_container_workspace_absent(ctx: Context, workspace_module: str) -> None:
@@ -466,38 +399,6 @@ def publish_authorized_key(ctx: Context, workspace_module: str, public_key: str)
         f"printf '%s\\n' {quoted_key} > /etc/ssh/authorized_keys/{quoted_module}"
         f" && test \"$(stat -c '%U:%G %a' /etc/ssh/authorized_keys/{quoted_module})\" = 'root:root 644'",
     )
-
-
-def stage_workspace_configs(workspace: WorkspaceRecord, domain: str) -> tuple[Path, Path]:
-    workspace_port = next_workspace_port(workspace.module)
-    asgi_module = f"{workspace.django_module}.asgi"
-
-    supervisor_config = render_template(
-        SUPERVISOR_TEMPLATE_PATH,
-        {
-            "PROJECT_NAME": workspace.module,
-            "PROJECT_PORT": str(workspace_port),
-            "ASGI_MODULE": asgi_module,
-            "DJANGO_MODULE": workspace.django_module,
-        },
-    )
-    supervisor_config = "; Automatically generated by invoke workspaces.create.\n" + supervisor_config
-
-    nginx_config = render_template(
-        NGINX_TEMPLATE_PATH,
-        {
-            "PROJECT_NAME": workspace.module,
-            "PROJECT_PORT": str(workspace_port),
-            "PROJECT_DOMAIN": domain,
-        },
-    )
-    nginx_config = "# Automatically generated by invoke workspaces.create.\n" + nginx_config
-
-    supervisor_path = staged_supervisor_config_path(workspace.module)
-    nginx_path = staged_nginx_config_path(workspace.module)
-    write_text_file(supervisor_path, supervisor_config)
-    write_text_file(nginx_path, nginx_config)
-    return supervisor_path, nginx_path
 
 
 def log_setup_step(workspace_module: str, step: str) -> None:

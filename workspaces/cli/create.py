@@ -10,13 +10,13 @@ from workspaces.cli.common import (
     ensure_workspace_secret_file,
     ensure_workspace_secret_root,
     ensure_workspace_keypair,
+    ensure_workspace_log_dir,
     ensure_workspaces_container,
     grant_host_workspace_access,
     install_workspace_shell_environment,
     log_setup_step,
     publish_authorized_key,
     refresh_generated_ssh_config,
-    stage_workspace_configs,
     workspace_private_key_path,
 )
 from workspaces.cli.constants import WORKSPACES_DIR
@@ -26,12 +26,11 @@ from workspaces.cli.constants import WORKSPACES_DIR
     help={
         "name": "Human-friendly workspace name",
         "module": "Unique workspace module and Linux username",
-        "domain": "Domain for the staged nginx config, defaults to <slug>.localhost",
         "django_module": "Django project module name, defaults to web",
     }
 )
-def create(ctx, name: str, module: str, domain: str | None = None, django_module: str = "web"):
-    """Create a workspace, SSH access, and staged configs."""
+def create(ctx, name: str, module: str, django_module: str = "web"):
+    """Create a workspace, its Linux account, secrets and SSH access."""
     assert_workspace_state_clean(module)
     ensure_workspace_secret_root()
     ensure_workspaces_container(ctx)
@@ -40,10 +39,10 @@ def create(ctx, name: str, module: str, domain: str | None = None, django_module
     workspace = create_workspace(name=name, module=module, django_module=django_module)
     if not workspace.api_key:
         raise RuntimeError(f"Management did not return an API key for workspace '{workspace.module}'.")
-    domain = domain or f"{workspace.slug}.localhost"
     log_setup_step(workspace.module, "workspace_created")
 
     create_container_user_and_home(ctx, workspace.module)
+    ensure_workspace_log_dir(ctx, workspace.module)
     log_setup_step(workspace.module, "home_created")
 
     # The plaintext API key exists only in this response, so it has to reach the workspace .env now.
@@ -66,9 +65,6 @@ def create(ctx, name: str, module: str, domain: str | None = None, django_module
         },
     )
     log_setup_step(workspace.module, "ssh_access")
-
-    stage_workspace_configs(workspace, domain)
-    log_setup_step(workspace.module, "config_staged")
 
     refresh_generated_ssh_config()
     log_setup_step(workspace.module, "ssh_config")

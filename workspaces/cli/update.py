@@ -3,7 +3,8 @@ from shlex import quote
 from invoke.tasks import task
 
 from workspaces.cli.client import get_workspace
-from workspaces.cli.common import build_ssh_connection, log_setup_step, require_setup_steps, stop_workspace_program
+from workspaces.cli.common import build_ssh_connection, log_setup_step, require_setup_steps
+from workspaces.cli.runtimes.common import stop_workspace_runtimes
 
 
 def ensure_pyproject_exists(conn, repo_dir: str, workspace_module: str) -> None:
@@ -29,7 +30,7 @@ def update(ctx, workspace_module: str):
     require_setup_steps(workspace, ("workspace_created", "home_created", "ssh_access"))
 
     repo_dir = f"/home/{workspace.module}"
-    stop_workspace_program(ctx, workspace.module, warn=True)
+    stop_workspace_runtimes(workspace.module)
     conn = build_ssh_connection(workspace)
     install_pyproject_dependencies(conn, repo_dir, workspace.module)
     log_setup_step(workspace.module, "dependencies_updated")
@@ -37,4 +38,4 @@ def update(ctx, workspace_module: str):
     print("")
     print(f"Updated dependencies for {workspace.name} ({workspace.module}).")
     print("Next step:")
-    print(f"  invoke workspaces.enable --workspace-module={workspace.module}")
+    print(f"  invoke runtimes.add --workspace-module={workspace.module} --type=django --name=web")

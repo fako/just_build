@@ -70,6 +70,9 @@ class ConfigFileSchema(Schema):
 class ManifestSchema(Schema):
     """The complete desired state for the runtimes it covers, never a diff."""
     root: str
+    # The workspaces this manifest speaks for. The reconciler prunes only inside these, so a
+    # workspace management has no runtimes for keeps whatever config it has rather than losing it.
+    workspaces: list[str]
     files: list[ConfigFileSchema]
 
 
@@ -178,10 +181,16 @@ def get_configs(request: HttpRequest, workspace_module: str | None = None) -> Ma
     Complete rather than incremental on purpose: the reconciler on the host deletes whatever it finds
     under the root that is not listed here, so disabling, renaming and removing all prune themselves.
     """
+    workspaces = request.auth.workspaces()
     runtimes = request.auth.runtimes().enabled().select_related("workspace")
     if workspace_module:
+        workspaces = workspaces.filter(module=workspace_module)
         runtimes = runtimes.filter(workspace__module=workspace_module)
-    return ManifestSchema(root=CONFIG_ROOT, files=build_manifest(runtimes))
+    return ManifestSchema(
+        root=CONFIG_ROOT,
+        workspaces=sorted(workspaces.values_list("module", flat=True)),
+        files=build_manifest(runtimes),
+    )
 
 
 @controller.post("/reload/", response=ConfigUpdateSchema, auth=control_api_key_auth, tags=["Runtimes"])
@@ -240,7 +249,9 @@ def disable_runtime(request: HttpRequest, runtime_id: UUID) -> Runtime:
 @controller.get("/{runtime_id}/configs/", response=ManifestSchema, auth=control_api_key_auth, tags=["Runtimes"])
 def get_runtime_configs(request: HttpRequest, runtime_id: UUID) -> ManifestSchema:
     runtime = get_runtime_or_404(request, runtime_id)
-    return ManifestSchema(root=CONFIG_ROOT, files=build_manifest([runtime]))
+    return ManifestSchema(
+        root=CONFIG_ROOT, workspaces=[runtime.workspace.module], files=build_manifest([runtime]),
+    )
 
 
 @controller.get("/{runtime_id}/sync-commands/", response=SyncCommandsSchema, auth=control_api_key_auth,

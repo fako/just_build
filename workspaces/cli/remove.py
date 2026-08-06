@@ -5,21 +5,19 @@ from shlex import quote
 from invoke.context import Context
 from invoke.tasks import task
 
-from workspaces.cli.client import delete_workspace
+from workspaces.cli.client import ManagementClientError, delete_workspace
 from workspaces.cli.common import (
-    active_nginx_config_path,
-    active_supervisor_config_path,
     docker_exec,
     ensure_workspace_state_account_files,
     ensure_workspaces_container,
     refresh_generated_ssh_config,
-    staged_nginx_config_path,
-    staged_supervisor_config_path,
     sync_workspace_state_account_files,
     workspace_key_dir,
     workspace_repo_dir,
     workspace_secret_dir,
 )
+from workspaces.cli.runtimes import client as runtimes_client
+from workspaces.cli.runtimes.common import apply_configs
 
 
 def validate_workspace_module(workspace_module: str) -> None:
@@ -37,19 +35,19 @@ def confirm_workspace_removal(workspace_module: str) -> bool:
     return answer.strip().lower() in {"y", "yes"}
 
 
-def remove_runtime_config(ctx: Context, workspace_module: str) -> None:
-    docker_exec(ctx, f"supervisorctl stop {quote(workspace_module)}", warn=True)
+def remove_workspace_runtimes(ctx: Context, workspace_module: str) -> None:
+    """
+    Delete the workspace's runtimes, then reconcile.
 
-    for path in (
-        active_supervisor_config_path(workspace_module),
-        active_nginx_config_path(workspace_module),
-        staged_supervisor_config_path(workspace_module),
-        staged_nginx_config_path(workspace_module),
-    ):
-        path.unlink(missing_ok=True)
-
-    docker_exec(ctx, "supervisorctl reread && supervisorctl update")
-    docker_exec(ctx, "nginx -t && nginx -s reload")
+    Deleting a runtime drops it out of the manifest, which is what removes its files: the reconciler
+    prunes whatever management no longer lists.
+    """
+    try:
+        for runtime in runtimes_client.list_runtimes(workspace_module):
+            runtimes_client.delete_runtime(runtime.id)
+        apply_configs(ctx)
+    except ManagementClientError as exc:
+        print(f"Could not remove runtimes through management, continuing anyway: {exc}")
 
 
 def remove_workspace_database(ctx: Context, workspace_module: str) -> None:
@@ -78,6 +76,7 @@ def remove_container_workspace(ctx: Context, workspace_module: str) -> None:
             Path("/home") / workspace_module,
             Path("/workspaces/secrets") / workspace_module,
             Path("/etc/ssh/authorized_keys") / workspace_module,
+            Path("/var/log/workspaces") / workspace_module,
         )
     )
     docker_exec(ctx, f"rm -rf -- {quoted_paths}", user="root")
@@ -123,7 +122,7 @@ def remove(ctx: Context, workspace_module: str):
 
     ensure_workspaces_container(ctx)
 
-    remove_runtime_config(ctx, workspace_module)
+    remove_workspace_runtimes(ctx, workspace_module)
     remove_workspace_database(ctx, workspace_module)
     remove_container_workspace(ctx, workspace_module)
     remove_host_workspace(workspace_module)

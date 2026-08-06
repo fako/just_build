@@ -59,9 +59,10 @@ def test_run_workspace_migrations_uses_workspace_venv() -> None:
 
     clean_cli.run_workspace_migrations(conn, "/home/demo")
 
-    assert conn.commands == [
-        {"command": "cd /home/demo && venv/bin/python manage.py migrate", "echo": True, "pty": True, "env": None, "warn": False}
-    ]
+    assert conn.commands == [{
+        "command": "cd /home/demo && venv/bin/python manage.py migrate",
+        "echo": True, "pty": True, "env": None, "warn": False,
+    }]
 
 
 def test_ensure_workspace_superusers_runs_createsuperuser_with_env_vars() -> None:
@@ -86,7 +87,7 @@ def test_clean_recreates_database_migrates_and_creates_users(monkeypatch) -> Non
     calls: list[tuple[str, object]] = []
 
     monkeypatch.setattr(clean_cli, "get_workspace", lambda workspace_module: workspace)
-    monkeypatch.setattr(clean_cli, "stop_workspace_program", lambda ctx, module, **kwargs: calls.append(("stop", module)))
+    monkeypatch.setattr(clean_cli, "stop_workspace_runtimes", lambda module: calls.append(("stop", module)))
     monkeypatch.setattr(
         clean_cli,
         "ensure_workspace_database",
@@ -98,34 +99,33 @@ def test_clean_recreates_database_migrates_and_creates_users(monkeypatch) -> Non
         lambda workspace_module, step: calls.append(("setup", (workspace_module, step))),
     )
     monkeypatch.setattr(clean_cli, "build_ssh_connection", lambda received_workspace: conn)
-    monkeypatch.setattr(clean_cli, "restart_workspace_program", lambda ctx, module: calls.append(("restart", module)))
+    monkeypatch.setattr(clean_cli, "restart_workspace_runtimes", lambda module: calls.append(("restart", module)))
 
     clean_cli.clean.body(RecordingContext(), "demo", force_password=None)
 
+    # Restarting is unconditional now: enablement moved from the workspace to its runtimes, and
+    # restart_workspace_runtimes skips whichever of them are not enabled.
     assert calls == [
         ("stop", "demo"),
         ("database", "demo"),
         ("setup", ("demo", "database_created")),
+        ("restart", "demo"),
     ]
     assert conn.commands[0]["command"].endswith("manage.py migrate")
     assert conn.commands[1]["command"].endswith("createsuperuser --noinput")
     assert conn.commands[1]["env"]["DJANGO_SUPERUSER_EMAIL"] == "admin@example.com"
 
 
-def test_clean_restarts_enabled_workspace(monkeypatch) -> None:
+def test_clean_restarts_the_workspace_runtimes(monkeypatch) -> None:
     workspace = workspace_record(enabled=True)
     calls: list[str] = []
 
     monkeypatch.setattr(clean_cli, "get_workspace", lambda workspace_module: workspace)
-    monkeypatch.setattr(clean_cli, "stop_workspace_program", lambda *args, **kwargs: None)
+    monkeypatch.setattr(clean_cli, "stop_workspace_runtimes", lambda *args, **kwargs: None)
     monkeypatch.setattr(clean_cli, "ensure_workspace_database", lambda *args, **kwargs: None)
     monkeypatch.setattr(clean_cli, "log_setup_step", lambda *args, **kwargs: None)
     monkeypatch.setattr(clean_cli, "build_ssh_connection", lambda workspace: RecordingConnection())
-    monkeypatch.setattr(
-        clean_cli,
-        "restart_workspace_program",
-        lambda ctx, module: calls.append(module),
-    )
+    monkeypatch.setattr(clean_cli, "restart_workspace_runtimes", lambda module: calls.append(module))
 
     clean_cli.clean.body(RecordingContext(), "demo")
 

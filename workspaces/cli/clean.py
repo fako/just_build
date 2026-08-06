@@ -10,9 +10,8 @@ from workspaces.cli.common import (
     ensure_workspace_database,
     log_setup_step,
     require_setup_steps,
-    stop_workspace_program,
 )
-from workspaces.cli.sync import restart_workspace_program
+from workspaces.cli.runtimes.common import restart_workspace_runtimes, stop_workspace_runtimes
 
 CLEAN_REQUIRED_SETUP_STEPS = (
     "workspace_created",
@@ -58,7 +57,7 @@ def clean(ctx: Context, workspace_module: str, force_password: str | None = None
     workspace = get_workspace(workspace_module)
     require_setup_steps(workspace, CLEAN_REQUIRED_SETUP_STEPS)
 
-    stop_workspace_program(ctx, workspace.module, warn=True)
+    stop_workspace_runtimes(workspace.module)
     ensure_workspace_database(ctx, workspace)
     log_setup_step(workspace.module, "database_created")
 
@@ -67,8 +66,7 @@ def clean(ctx: Context, workspace_module: str, force_password: str | None = None
     run_workspace_migrations(conn, repo_dir)
     ensure_workspace_superusers(conn, repo_dir, ctx.config.management.superusers, force_password)
 
-    if "enabled" in workspace.setup:
-        restart_workspace_program(ctx, workspace.module)
+    restart_workspace_runtimes(workspace.module)
 
     print("")
     print(f"Cleaned workspace {workspace.name} ({workspace.module}).")

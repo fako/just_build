@@ -125,7 +125,7 @@ def test_copy_template_files_traverses_directories_and_renders_templates(tmp_pat
 
 
 def test_default_opencode_template_uses_workspace_reference_without_server_credentials() -> None:
-    template_path = init_cli.TEMPLATES_DIR / "default" / "opencode.jsonc.tpl"
+    template_path = init_cli.TEMPLATES_DIR / "default" / "opencode.tpl.jsonc"
 
     rendered = init_cli.render_template_file(template_path, workspace_record())
 

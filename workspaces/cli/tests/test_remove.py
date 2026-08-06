@@ -51,30 +51,39 @@ def test_remove_task_cancellation_does_not_start_cleanup(monkeypatch, capsys) ->
     assert capsys.readouterr().out == "Removal of workspace demo cancelled.\n"
 
 
-def test_remove_runtime_config_stops_program_removes_configs_and_reloads(tmp_path, monkeypatch) -> None:
-    calls: list[tuple[str, dict[str, object]]] = []
-    paths = [tmp_path / name for name in ("active-supervisor", "active-nginx", "staged-supervisor", "staged-nginx")]
-    for path in paths:
-        path.write_text("config")
-
-    monkeypatch.setattr(remove_cli, "active_supervisor_config_path", lambda module: paths[0])
-    monkeypatch.setattr(remove_cli, "active_nginx_config_path", lambda module: paths[1])
-    monkeypatch.setattr(remove_cli, "staged_supervisor_config_path", lambda module: paths[2])
-    monkeypatch.setattr(remove_cli, "staged_nginx_config_path", lambda module: paths[3])
-    monkeypatch.setattr(
-        remove_cli,
-        "docker_exec",
-        lambda ctx, command, **kwargs: calls.append((command, kwargs)),
-    )
-
-    remove_cli.remove_runtime_config(object(), "demo")
-
-    assert not any(path.exists() for path in paths)
-    assert calls == [
-        ("supervisorctl stop demo", {"warn": True}),
-        ("supervisorctl reread && supervisorctl update", {}),
-        ("nginx -t && nginx -s reload", {}),
+def test_remove_workspace_runtimes_deletes_each_and_reconciles(monkeypatch) -> None:
+    calls: list[tuple[str, object]] = []
+    runtimes = [
+        SimpleNamespace(id="runtime-web", program_name="demo_web"),
+        SimpleNamespace(id="runtime-worker", program_name="demo_worker"),
     ]
+
+    monkeypatch.setattr(remove_cli.runtimes_client, "list_runtimes", lambda module: runtimes)
+    monkeypatch.setattr(
+        remove_cli.runtimes_client, "delete_runtime", lambda runtime_id: calls.append(("delete", runtime_id)),
+    )
+    monkeypatch.setattr(remove_cli, "apply_configs", lambda ctx: calls.append(("apply", None)))
+
+    remove_cli.remove_workspace_runtimes(RecordingContext(), "demo")
+
+    # Deleting drops each runtime out of the manifest, and the reconcile is what removes its files.
+    assert calls == [
+        ("delete", "runtime-web"),
+        ("delete", "runtime-worker"),
+        ("apply", None),
+    ]
+
+
+def test_remove_workspace_runtimes_continues_when_management_is_unreachable(monkeypatch, capsys) -> None:
+    def explode(module):
+        raise remove_cli.ManagementClientError("management is down")
+
+    monkeypatch.setattr(remove_cli.runtimes_client, "list_runtimes", explode)
+
+    # Removal must still be able to finish tearing down the account and files.
+    remove_cli.remove_workspace_runtimes(RecordingContext(), "demo")
+
+    assert "continuing anyway" in capsys.readouterr().out
 
 
 def test_remove_workspace_database_uses_workspace_database_and_role() -> None:
@@ -119,7 +128,11 @@ def test_remove_container_workspace_removes_mounts_key_and_persistent_account(mo
     remove_cli.remove_container_workspace(object(), "demo")
 
     assert calls == [
-        ("rm -rf -- /home/demo /workspaces/secrets/demo /etc/ssh/authorized_keys/demo", {"user": "root"}),
+        (
+            "rm -rf -- /home/demo /workspaces/secrets/demo /etc/ssh/authorized_keys/demo"
+            " /var/log/workspaces/demo",
+            {"user": "root"},
+        ),
         ("ensure account files", {}),
         (
             "if id -u demo >/dev/null 2>&1; then pkill -KILL -u demo 2>/dev/null || true;"
