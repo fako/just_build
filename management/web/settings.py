@@ -41,6 +41,7 @@ INSTALLED_APPS = [
 
     "access_control",
     "credentials",
+    "runtimes",
 ]
 
 MIDDLEWARE = [

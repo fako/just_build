@@ -11,5 +11,6 @@ exclude =
     .venv,
     venv,
     */migrations/*,
-    # Agent-owned workspace repositories. Their code is not ours to lint.
-    workspaces/src
+    # Agent-owned workspace repositories and vendored template payloads. Not ours to lint.
+    workspaces/src,
+    workspaces/templates/datagrowth

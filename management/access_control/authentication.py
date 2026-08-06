@@ -14,12 +14,18 @@ from __future__ import annotations
 
 from secrets import compare_digest
 
+from django.apps import apps
 from django.conf import settings
-from django.db.models import QuerySet
+from django.db.models import Model, QuerySet
 from django.http import HttpRequest
 from ninja.security import HttpBearer
 
 from access_control.models import CONTROL_KEY_SCHEME, WORKSPACE_KEY_SCHEME, Workspace, hash_api_key
+
+
+def runtime_model() -> type[Model]:
+    """Resolved lazily: runtimes depends on access_control, so importing it here would be circular."""
+    return apps.get_model("runtimes", "Runtime")
 
 
 class Principal:
@@ -42,6 +48,9 @@ class ControlPrincipal(Principal):
     def workspaces(self) -> QuerySet[Workspace]:
         return Workspace.objects.all()
 
+    def runtimes(self) -> QuerySet:
+        return runtime_model().objects.all()
+
     def __str__(self) -> str:
         return "control"
 
@@ -54,6 +63,9 @@ class WorkspacePrincipal(Principal):
 
     def workspaces(self) -> QuerySet[Workspace]:
         return Workspace.objects.filter(pk=self.workspace.pk)
+
+    def runtimes(self) -> QuerySet:
+        return runtime_model().objects.filter(workspace=self.workspace)
 
     def __str__(self) -> str:
         return f"workspace:{self.workspace.module}"
