@@ -1,5 +1,5 @@
 import pytest
-from xmlrpc.client import Fault
+from xmlrpc.client import Fault, ProtocolError
 
 from runtimes.supervisor import (
     ALREADY_ADDED,
@@ -9,6 +9,7 @@ from runtimes.supervisor import (
     FakeSupervisorClient,
     FakeSupervisorState,
     SupervisorError,
+    TransportErrorProxy,
     UnknownProgram,
     XmlRpcSupervisorClient,
     get_supervisor_client,
@@ -64,6 +65,49 @@ def build_client(proxy: StubProxy) -> XmlRpcSupervisorClient:
     client = XmlRpcSupervisorClient(url="http://workspaces:9001/RPC2", username="management", password="secret")
     client._proxy = lambda: proxy
     return client
+
+
+def test_transport_failures_become_supervisor_errors():
+    # A wrong password or a container that is not up arrives as a ProtocolError, not a Fault.
+    class RefusingProxy:
+        def getProcessInfo(self, program):
+            raise ProtocolError("workspaces:9001/RPC2", 401, "Unauthorized", {})
+
+    client = XmlRpcSupervisorClient(url="http://workspaces:9001/RPC2", username="management", password="wrong")
+    client._proxy = lambda: TransportErrorProxy(RefusingProxy(), client.url)
+
+    with pytest.raises(SupervisorError) as error:
+        client.status("magic_match_web")
+
+    assert "401" in str(error.value)
+    assert "supervisor password" in str(error.value)
+
+
+def test_unreachable_supervisord_becomes_a_supervisor_error():
+    class UnreachableProxy:
+        def reloadConfig(self):
+            raise ConnectionRefusedError("Connection refused")
+
+    client = XmlRpcSupervisorClient(url="http://workspaces:9001/RPC2", username="management", password="secret")
+    client._proxy = lambda: TransportErrorProxy(UnreachableProxy(), client.url)
+
+    with pytest.raises(SupervisorError) as error:
+        client.reread()
+
+    assert "Could not reach supervisord" in str(error.value)
+
+
+def test_faults_pass_through_the_transport_wrapper():
+    # Faults are the protocol working, so each caller still interprets them itself.
+    class FaultingProxy:
+        def getProcessInfo(self, program):
+            raise Fault(BAD_NAME, "BAD_NAME")
+
+    client = XmlRpcSupervisorClient(url="http://workspaces:9001/RPC2", username="management", password="secret")
+    client._proxy = lambda: TransportErrorProxy(FaultingProxy(), client.url)
+
+    with pytest.raises(UnknownProgram):
+        client.status("nope")
 
 
 def test_credentials_are_placed_in_the_url():

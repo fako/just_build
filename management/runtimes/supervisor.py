@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Protocol
-from xmlrpc.client import Fault, ServerProxy
+from xmlrpc.client import Fault, ProtocolError, ServerProxy
 from urllib.parse import urlsplit, urlunsplit
 
 from django.conf import settings
@@ -70,6 +70,36 @@ class SupervisorClient(Protocol):
     def read_log(self, program: str, offset: int = 0, length: int = 0) -> str: ...
 
 
+class TransportErrorProxy:
+    """
+    Turns transport failures into SupervisorError.
+
+    A wrong password, a container that is not up, or a refused connection arrives as a ProtocolError
+    or an OSError rather than an XML-RPC Fault, and would otherwise escape as a bare traceback.
+    Faults pass straight through, because the callers below interpret those individually.
+    """
+
+    def __init__(self, proxy, url: str) -> None:
+        self._proxy = proxy
+        self._url = url
+
+    def __getattr__(self, name: str):
+        method = getattr(self._proxy, name)
+
+        def call(*args):
+            try:
+                return method(*args)
+            except ProtocolError as exc:
+                raise SupervisorError(
+                    f"Supervisord at {self._url} refused the call with HTTP {exc.errcode} {exc.errmsg}. "
+                    "Check that the workspaces container is running with a matching supervisor password."
+                ) from exc
+            except OSError as exc:
+                raise SupervisorError(f"Could not reach supervisord at {self._url}: {exc}") from exc
+
+        return call
+
+
 class XmlRpcSupervisorClient:
     """Talks to the supervisord inet_http_server in the workspaces container."""
 
@@ -82,7 +112,7 @@ class XmlRpcSupervisorClient:
         parts = urlsplit(self.url)
         netloc = f"{self.username}:{self.password}@{parts.netloc}" if self.username else parts.netloc
         authenticated = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
-        return ServerProxy(authenticated).supervisor
+        return TransportErrorProxy(ServerProxy(authenticated).supervisor, self.url)
 
     def _status_from_info(self, info: dict) -> ProcessStatus:
         return ProcessStatus(

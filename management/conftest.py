@@ -2,9 +2,18 @@ import pytest
 from django.test import Client
 
 from access_control.models import Workspace
+from runtimes.supervisor import FAKE_SUPERVISOR, FakeSupervisorState
 
 
 CONTROL_API_KEY = "control:11111111-1111-1111-1111-111111111111"
+
+
+@pytest.fixture
+def supervisor(settings) -> FakeSupervisorState:
+    """Swap supervisord for the in-memory fake, so process control is testable without a container."""
+    settings.SUPERVISOR_CLIENT = "runtimes.supervisor.FakeSupervisorClient"
+    FAKE_SUPERVISOR.reset()
+    return FAKE_SUPERVISOR
 
 
 @pytest.fixture

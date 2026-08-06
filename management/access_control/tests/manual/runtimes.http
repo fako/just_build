@@ -1,0 +1,73 @@
+@baseUrl = http://127.0.0.1:8000
+# The control key from .env (INVOKE_MANAGEMENT_SECURITY_API_KEY).
+@controlKey = control:00000000-0000-0000-0000-000000000000
+# A workspace key, as returned once by the workspaces create or rotate-key calls.
+@workspaceKey = workspace:00000000-0000-0000-0000-000000000000
+@runtimeId = 00000000-0000-0000-0000-000000000000
+
+### Add a Django runtime, letting management allocate the port
+POST {{baseUrl}}/api/v1/runtimes/
+Authorization: Bearer {{controlKey}}
+Content-Type: application/json
+
+{
+  "workspace_module": "magic_match",
+  "type": "django",
+  "name": "web"
+}
+
+### Add a Celery runtime, which takes no port
+POST {{baseUrl}}/api/v1/runtimes/
+Authorization: Bearer {{controlKey}}
+Content-Type: application/json
+
+{
+  "workspace_module": "magic_match",
+  "type": "celery",
+  "name": "worker",
+  "configuration": {"queues": ["default"], "concurrency": 4}
+}
+
+### List runtimes for one workspace
+GET {{baseUrl}}/api/v1/runtimes/?workspace_module=magic_match
+Authorization: Bearer {{controlKey}}
+
+### List runtimes as a workspace, which only ever returns its own
+GET {{baseUrl}}/api/v1/runtimes/
+Authorization: Bearer {{workspaceKey}}
+
+### Enable a runtime, which puts it in the config manifest
+POST {{baseUrl}}/api/v1/runtimes/{{runtimeId}}/enable/
+Authorization: Bearer {{controlKey}}
+
+### The complete desired config tree, which invoke runtimes.apply writes and prunes against
+GET {{baseUrl}}/api/v1/runtimes/configs/
+Authorization: Bearer {{controlKey}}
+
+### The config files of one runtime
+GET {{baseUrl}}/api/v1/runtimes/{{runtimeId}}/configs/
+Authorization: Bearer {{controlKey}}
+
+### What to run inside the workspace to bring this runtime up to date
+GET {{baseUrl}}/api/v1/runtimes/{{runtimeId}}/sync-commands/
+Authorization: Bearer {{controlKey}}
+
+### Pick up whatever the host just wrote, then reload nginx. Always follows a reconcile.
+POST {{baseUrl}}/api/v1/runtimes/reload/
+Authorization: Bearer {{controlKey}}
+
+### Restart, as the owning workspace would from inside the container
+POST {{baseUrl}}/api/v1/runtimes/{{runtimeId}}/restart/
+Authorization: Bearer {{workspaceKey}}
+
+### Status
+GET {{baseUrl}}/api/v1/runtimes/{{runtimeId}}/status/
+Authorization: Bearer {{workspaceKey}}
+
+### Tail the log through supervisord
+GET {{baseUrl}}/api/v1/runtimes/{{runtimeId}}/logs/?offset=0
+Authorization: Bearer {{workspaceKey}}
+
+### A workspace reaching for someone else's runtime gets a 404, not a 403
+GET {{baseUrl}}/api/v1/runtimes/00000000-0000-0000-0000-000000000001/
+Authorization: Bearer {{workspaceKey}}
