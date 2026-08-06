@@ -16,6 +16,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from pydantic import ValidationError as PydanticValidationError
 
+from runtimes.configs import ConfigFile, render_config, render_supervisord_environment, supervisor_config_path
 from runtimes.schemas import RuntimeConfiguration, SupervisordConfiguration
 
 
@@ -153,6 +154,8 @@ class SupervisordRuntime(Runtime):
     """
 
     configuration_schema: type[SupervisordConfiguration] = SupervisordConfiguration
+    # A type only overrides this when the shared program block is not enough for it.
+    supervisord_template = "runtimes/supervisord/program.conf"
 
     class Meta:
         proxy = True
@@ -161,6 +164,23 @@ class SupervisordRuntime(Runtime):
     def command(self) -> str:
         """The supervisord command= line."""
         raise NotImplementedError
+
+    def config_files(self) -> list[ConfigFile]:
+        """
+        Every file this runtime needs on disk, for the CLI on the host to write.
+
+        Returned as data rather than written here, because management has no host filesystem.
+        """
+        return [
+            ConfigFile(
+                path=supervisor_config_path(self.workspace.module, self.name),
+                content=render_config(self.supervisord_template, {
+                    "runtime": self,
+                    "settings": self.settings,
+                    "environment": render_supervisord_environment(self.environment()),
+                }),
+            ),
+        ]
 
     def environment(self) -> dict[str, str]:
         """Variables for the supervisord environment= line."""

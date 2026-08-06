@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 
+from runtimes.configs import ConfigFile, nginx_config_path, render_config
 from runtimes.models.base import SupervisordRuntime, register_runtime
 from runtimes.schemas import DjangoConfiguration, HttpConfiguration
 
@@ -15,9 +16,18 @@ class HttpRuntime(SupervisordRuntime):
     """
 
     configuration_schema: type[HttpConfiguration] = HttpConfiguration
+    nginx_template = "runtimes/nginx/http.conf"
 
     class Meta:
         proxy = True
+
+    def config_files(self) -> list[ConfigFile]:
+        return super().config_files() + [
+            ConfigFile(
+                path=nginx_config_path(self.workspace.module, self.name),
+                content=render_config(self.nginx_template, {"runtime": self}),
+            ),
+        ]
 
     @property
     def domain(self) -> str:

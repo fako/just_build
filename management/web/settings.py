@@ -56,6 +56,9 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'web.urls'
 
+# The template engine that renders workspace configuration files rather than HTML.
+CONFIG_TEMPLATE_ENGINE = "configs"
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -67,6 +70,17 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
             ],
+        },
+    },
+    {
+        # Renders supervisord and nginx configuration. HTML escaping would corrupt quotes and
+        # ampersands in command lines, so this engine has it switched off.
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'NAME': CONFIG_TEMPLATE_ENGINE,
+        'DIRS': [],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'autoescape': False,
         },
     },
 ]
