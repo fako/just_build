@@ -1,6 +1,30 @@
+from pathlib import Path
+
 from invoke.tasks import task
 
-from workspaces.cli.constants import SSH_KEYS_DIR
+from workspaces.cli.constants import SSH_CONFIG_PATH, SSH_KEYS_DIR
+
+
+USER_SSH_CONFIG = Path.home() / ".ssh" / "config"
+
+
+def check_ssh_config_include() -> bool:
+    """
+    Report whether the user's SSH config includes the generated workspace aliases.
+
+    The fabfile addresses workspaces by alias and fails to resolve them without this, which looks
+    like a connection problem rather than a missing line.
+    """
+    include_line = f"Include {SSH_CONFIG_PATH}"
+    if USER_SSH_CONFIG.exists() and str(SSH_CONFIG_PATH) in USER_SSH_CONFIG.read_text():
+        return True
+
+    print("")
+    print(f"Generated workspace SSH aliases are not included from {USER_SSH_CONFIG}.")
+    print("Add this line at the top of that file to use 'fab -H <alias>' and Cursor Remote SSH:")
+    print("")
+    print(f"    {include_line}")
+    return False
 
 
 def ensure_ssh_host_keys(ctx) -> bool:
@@ -27,11 +51,12 @@ def ensure_ssh_host_keys(ctx) -> bool:
 
 @task
 def setup(ctx):
-    """Generate SSH host keys for the workspaces container."""
+    """Generate SSH host keys for the workspaces container and check the SSH config include."""
     generated = ensure_ssh_host_keys(ctx)
     if not generated:
         print("SSH host keys already exist. Delete them first to regenerate.")
-        return
+    else:
+        print("\nSSH host keys generated. Rebuild the container to use them:")
+        print("  docker compose --profile workspaces up --build")
 
-    print("\nSSH host keys generated. Rebuild the container to use them:")
-    print("  docker compose --profile workspaces up --build")
+    check_ssh_config_include()
