@@ -47,11 +47,12 @@ RUN mkdir -p /var/log/supervisor \
 
 COPY container/docker-entrypoint.sh /usr/local/bin/workspaces-entrypoint
 COPY container/load_user_passwords.sh container/load_opencode_secret.sh \
-     container/load_supervisor_secret.sh /usr/local/bin/
+     container/load_supervisor_secret.sh container/create_log_directories.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/workspaces-entrypoint \
     /usr/local/bin/load_user_passwords.sh \
     /usr/local/bin/load_opencode_secret.sh \
-    /usr/local/bin/load_supervisor_secret.sh
+    /usr/local/bin/load_supervisor_secret.sh \
+    /usr/local/bin/create_log_directories.sh
 
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/opencode-proxy.conf /etc/nginx/opencode-proxy.conf
