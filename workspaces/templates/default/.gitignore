@@ -1,4 +1,5 @@
 # OS + home exclusions
+.ssh
 .local
 .config
 .bashrc

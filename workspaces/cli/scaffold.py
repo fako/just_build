@@ -1,3 +1,9 @@
+"""
+Scaffolding: the greenfield half of getting a project into a workspace.
+
+Its counterpart is workspaces.clone_repo, which brings an existing repository in instead. Both end
+in the same place, so both are followed by runtimes.add and runtimes.install.
+"""
 from pathlib import Path
 from shlex import quote
 from tempfile import NamedTemporaryFile
@@ -13,19 +19,11 @@ from workspaces.cli.common import (
     require_setup_steps,
 )
 from workspaces.cli.constants import TEMPLATES_DIR
+from workspaces.cli.repository import assert_no_git_repo, ensure_git_repo, ensure_initial_commit
 
 
 DEFAULT_TEMPLATES = ("default",)
 TEMPLATE_ENV = Environment(autoescape=False, keep_trailing_newline=True, undefined=StrictUndefined)
-
-
-def ensure_git_repo(conn, repo_dir: str, workspace_name: str, workspace_module: str) -> None:
-    result = conn.run(f"test -d {quote(repo_dir)}/.git", hide=True, warn=True)
-    if not result.ok:
-        conn.run(f"git init -b main {quote(repo_dir)}", echo=True)
-
-    conn.run(f"git -C {quote(repo_dir)} config user.name {quote(workspace_name)}", echo=True)
-    conn.run(f"git -C {quote(repo_dir)} config user.email {quote(workspace_module)}@workspace.local", echo=True)
 
 
 def ensure_django_project(conn, repo_dir: str, django_module: str) -> bool:
@@ -147,20 +145,6 @@ def copy_workspace_templates(conn, repo_dir: str, templates: list[str] | tuple[s
     return template_names
 
 
-def ensure_initial_commit(conn, repo_dir: str) -> bool:
-    result = conn.run(f"git -C {quote(repo_dir)} rev-parse --verify HEAD", hide=True, warn=True)
-    if result.ok:
-        return False
-
-    status = conn.run(f"git -C {quote(repo_dir)} status --porcelain", hide=True, warn=True)
-    if not status.stdout.strip():
-        return False
-
-    conn.run(f"git -C {quote(repo_dir)} add .", echo=True)
-    conn.run(f'git -C {quote(repo_dir)} commit -m "Initialize Django project."', echo=True)
-    return True
-
-
 @task(
     help={
         "workspace_module": "Existing workspace module created by workspaces.create",
@@ -168,13 +152,16 @@ def ensure_initial_commit(conn, repo_dir: str) -> bool:
         "git": "Initialize a git repository and create the initial commit (default: enabled).",
     },
 )
-def init(ctx, workspace_module: str, templates: str = "default", git: bool = True):
-    """Initialize Django and workspace templates over SSH as the workspace user."""
+def scaffold(ctx, workspace_module: str, templates: str = "default", git: bool = True):
+    """Scaffold a new Django project and the workspace templates over SSH as the workspace user."""
     workspace = get_workspace(workspace_module)
     require_setup_steps(workspace, ("workspace_created", "home_created", "secrets_created", "ssh_access"))
 
     repo_dir = f"/home/{workspace.module}"
     conn = build_ssh_connection(workspace)
+    # Checked whether or not git is asked for: a repository in the home directory means there is
+    # already a project there, and templates would be written over it either way.
+    assert_no_git_repo(conn, repo_dir, workspace.module)
 
     if "database_created" not in workspace.setup:
         ensure_workspace_database(ctx, workspace)
@@ -197,7 +184,7 @@ def init(ctx, workspace_module: str, templates: str = "default", git: bool = Tru
             log_setup_step(workspace.module, "initial_commit")
 
     print("")
-    print(f"Initialized workspace {workspace.name} ({workspace.module}) over SSH.")
+    print(f"Scaffolded workspace {workspace.name} ({workspace.module}) over SSH.")
     print(f"Templates resolved: {', '.join(template_names)}")
     print("Next step:")
-    print(f"  invoke workspaces.update --workspace-module={workspace.module}")
+    print(f"  invoke runtimes.add --workspace-module={workspace.module} --type=django --name=web")

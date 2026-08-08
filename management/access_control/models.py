@@ -28,6 +28,11 @@ class Workspace(models.Model):
     django_module = models.CharField(max_length=255, default="web")
     setup = models.JSONField(default=dict, blank=True)
     ssh = models.JSONField(default=dict, blank=True)
+    # The public half of the keypair the workspace itself owns, generated inside its home by
+    # workspaces.create. It is what a workspace reaches git remotes with, so this is the key a human
+    # copies out of the admin and adds to a repository as a deploy key. The private half never
+    # leaves the workspace, and the inbound keypair in workspace.ssh is a different key entirely.
+    git_public_key = models.TextField(blank=True, default="")
     # Only the hash is stored. The plaintext key is returned once, when it is created or rotated, and
     # lives on from there in the workspace's own .env file.
     api_key_hash = models.CharField(max_length=64, unique=True, null=True, blank=True, editable=False)

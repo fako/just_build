@@ -11,11 +11,13 @@ state is open to the workspace that owns the runtime.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.http import HttpRequest
+from django.utils import timezone
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
@@ -41,6 +43,7 @@ class RuntimeSchema(Schema):
     configuration: dict
     port: int | None
     is_enabled: bool
+    installed_at: datetime | None
     log_path: str
 
     @staticmethod
@@ -76,7 +79,8 @@ class ManifestSchema(Schema):
     files: list[ConfigFileSchema]
 
 
-class SyncCommandsSchema(Schema):
+class CommandsSchema(Schema):
+    """Shell commands for the CLI to run inside a workspace, used by both install and sync."""
     program_name: str
     directory: str
     commands: list[str]
@@ -230,9 +234,27 @@ def delete_runtime(request: HttpRequest, runtime_id: UUID) -> tuple[int, None]:
     return 204, None
 
 
+@controller.post("/{runtime_id}/installed/", response=RuntimeSchema, auth=control_api_key_auth, tags=["Runtimes"])
+def mark_runtime_installed(request: HttpRequest, runtime_id: UUID) -> Runtime:
+    """Record that install_commands() have run. Only the CLI can say so, because only it can run them."""
+    runtime = get_runtime_or_404(request, runtime_id)
+    runtime.installed_at = timezone.now()
+    runtime.save(update_fields=["installed_at", "modified_at"])
+    return runtime
+
+
 @controller.post("/{runtime_id}/enable/", response=RuntimeSchema, auth=control_api_key_auth, tags=["Runtimes"])
 def enable_runtime(request: HttpRequest, runtime_id: UUID) -> Runtime:
     runtime = get_runtime_or_404(request, runtime_id)
+    if runtime.installed_at is None:
+        # Enabling starts a process. Without an install there is no virtualenv for it to start from,
+        # which surfaces as a supervisord backoff loop rather than as the missing step it is.
+        raise HttpError(
+            409,
+            f"Runtime '{runtime.program_name}' is not installed. Run "
+            f"'invoke runtimes.install --workspace-module={runtime.workspace.module} "
+            f"--name={runtime.name}' first.",
+        )
     runtime.is_enabled = True
     runtime.save(update_fields=["is_enabled", "modified_at"])
     return runtime
@@ -254,9 +276,21 @@ def get_runtime_configs(request: HttpRequest, runtime_id: UUID) -> ManifestSchem
     )
 
 
-@controller.get("/{runtime_id}/sync-commands/", response=SyncCommandsSchema, auth=control_api_key_auth,
+@controller.get("/{runtime_id}/install-commands/", response=CommandsSchema, auth=control_api_key_auth,
                 tags=["Runtimes"])
-def get_sync_commands(request: HttpRequest, runtime_id: UUID) -> SyncCommandsSchema:
+def get_install_commands(request: HttpRequest, runtime_id: UUID) -> CommandsSchema:
+    """What this runtime needs run inside its workspace once, before it can be enabled."""
+    runtime = get_runtime_or_404(request, runtime_id)
+    return CommandsSchema(
+        program_name=runtime.program_name,
+        directory=runtime.home_directory,
+        commands=runtime.install_commands(),
+    )
+
+
+@controller.get("/{runtime_id}/sync-commands/", response=CommandsSchema, auth=control_api_key_auth,
+                tags=["Runtimes"])
+def get_sync_commands(request: HttpRequest, runtime_id: UUID) -> CommandsSchema:
     """
     What this runtime needs run inside its workspace to be up to date.
 
@@ -264,7 +298,7 @@ def get_sync_commands(request: HttpRequest, runtime_id: UUID) -> SyncCommandsSch
     the workspace user, which is where that privilege already lives.
     """
     runtime = get_runtime_or_404(request, runtime_id)
-    return SyncCommandsSchema(
+    return CommandsSchema(
         program_name=runtime.program_name,
         directory=runtime.home_directory,
         commands=runtime.sync_commands(),

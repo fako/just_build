@@ -1,6 +1,8 @@
 """Thin client over the management runtime API. The CLI does no rendering of its own."""
 from __future__ import annotations
 
+from datetime import datetime
+
 import requests
 from pydantic import BaseModel
 
@@ -16,6 +18,7 @@ class RuntimeRecord(BaseModel):
     configuration: dict
     port: int | None
     is_enabled: bool
+    installed_at: datetime | None = None
     log_path: str
 
 
@@ -32,7 +35,8 @@ class ManifestRecord(BaseModel):
     files: list[ConfigFileRecord]
 
 
-class SyncCommandsRecord(BaseModel):
+class CommandsRecord(BaseModel):
+    """Commands to run inside a workspace, as returned for both install and sync."""
     program_name: str
     directory: str
     commands: list[str]
@@ -129,9 +133,19 @@ def get_manifest(workspace_module: str | None = None) -> ManifestRecord:
     return ManifestRecord.model_validate(response.json())
 
 
-def get_sync_commands(runtime_id: str) -> SyncCommandsRecord:
+def get_install_commands(runtime_id: str) -> CommandsRecord:
+    response = _request("get", f"{runtime_id}/install-commands/", f"fetch install commands for '{runtime_id}'")
+    return CommandsRecord.model_validate(response.json())
+
+
+def get_sync_commands(runtime_id: str) -> CommandsRecord:
     response = _request("get", f"{runtime_id}/sync-commands/", f"fetch sync commands for '{runtime_id}'")
-    return SyncCommandsRecord.model_validate(response.json())
+    return CommandsRecord.model_validate(response.json())
+
+
+def mark_runtime_installed(runtime_id: str) -> RuntimeRecord:
+    response = _request("post", f"{runtime_id}/installed/", f"mark runtime '{runtime_id}' installed")
+    return RuntimeRecord.model_validate(response.json())
 
 
 def reload_runtimes() -> ConfigUpdateRecord:

@@ -6,18 +6,19 @@ import pytest
 from workspaces.cli.client import WorkspaceRecord
 
 
-init_cli = importlib.import_module("workspaces.cli.init")
+scaffold_cli = importlib.import_module("workspaces.cli.scaffold")
 common_cli = importlib.import_module("workspaces.cli.common")
 
 
 class RecordingConnection:
-    def __init__(self) -> None:
+    def __init__(self, ok: bool = False) -> None:
+        self.ok = ok
         self.commands: list[str] = []
         self.uploads: dict[str, str] = {}
 
     def run(self, command: str, echo: bool = False, hide: bool = False, warn: bool = False):
         self.commands.append(command)
-        return SimpleNamespace(ok=False)
+        return SimpleNamespace(ok=self.ok)
 
     def put(self, local: str, remote: str) -> None:
         self.uploads[remote] = Path(local).read_text(encoding="utf-8")
@@ -46,24 +47,11 @@ def workspace_record(module: str = "demo", *, slug: str | None = None,
 
 
 def test_template_output_path_strips_tpl_before_final_suffix() -> None:
-    assert init_cli.template_output_path(Path("web/settings.tpl.py")) == Path("web/settings.py")
-    assert init_cli.template_output_path(Path("web/settings.py")) == Path("web/settings.py")
+    assert scaffold_cli.template_output_path(Path("web/settings.tpl.py")) == Path("web/settings.py")
+    assert scaffold_cli.template_output_path(Path("web/settings.py")) == Path("web/settings.py")
 
 
-def test_ensure_git_repo_initializes_main_branch() -> None:
-    conn = RecordingConnection()
-
-    init_cli.ensure_git_repo(conn, "/home/demo", "Demo Workspace", "demo")
-
-    assert conn.commands == [
-        "test -d /home/demo/.git",
-        "git init -b main /home/demo",
-        "git -C /home/demo config user.name 'Demo Workspace'",
-        "git -C /home/demo config user.email demo@workspace.local",
-    ]
-
-
-def test_init_can_skip_git_setup(monkeypatch) -> None:
+def test_scaffold_can_skip_git_setup(monkeypatch) -> None:
     workspace = workspace_record(
         setup={
             "workspace_created": "now",
@@ -76,29 +64,63 @@ def test_init_can_skip_git_setup(monkeypatch) -> None:
     conn = RecordingConnection()
     setup_steps: list[str] = []
 
-    monkeypatch.setattr(init_cli, "get_workspace", lambda workspace_module: workspace)
-    monkeypatch.setattr(init_cli, "build_ssh_connection", lambda received_workspace: conn)
+    monkeypatch.setattr(scaffold_cli, "get_workspace", lambda workspace_module: workspace)
+    monkeypatch.setattr(scaffold_cli, "build_ssh_connection", lambda received_workspace: conn)
     monkeypatch.setattr(
-        init_cli,
+        scaffold_cli,
         "ensure_git_repo",
         lambda *args: pytest.fail("git repository initialized with git=False"),
     )
     monkeypatch.setattr(
-        init_cli,
+        scaffold_cli,
         "ensure_initial_commit",
         lambda *args: pytest.fail("initial commit attempted with git=False"),
     )
-    monkeypatch.setattr(init_cli, "ensure_django_project", lambda *args: False)
-    monkeypatch.setattr(init_cli, "copy_workspace_templates", lambda *args: ("default",))
+    monkeypatch.setattr(scaffold_cli, "ensure_django_project", lambda *args: False)
+    monkeypatch.setattr(scaffold_cli, "copy_workspace_templates", lambda *args: ("default",))
     monkeypatch.setattr(
-        init_cli,
+        scaffold_cli,
         "log_setup_step",
         lambda workspace_module, step: setup_steps.append(step),
     )
 
-    init_cli.init.body(RecordingContext(), "demo", git=False)
+    scaffold_cli.scaffold.body(RecordingContext(), "demo", git=False)
 
     assert setup_steps == ["templates_resolved"]
+
+
+def scaffold_workspace() -> WorkspaceRecord:
+    return workspace_record(
+        setup={
+            "workspace_created": "now",
+            "home_created": "now",
+            "secrets_created": "now",
+            "ssh_access": "now",
+            "database_created": "now",
+        }
+    )
+
+
+def test_scaffold_refuses_a_home_that_already_holds_a_repository(monkeypatch) -> None:
+    # An ok connection answers `test -d /home/demo/.git` with a repository that is already there.
+    monkeypatch.setattr(scaffold_cli, "get_workspace", lambda workspace_module: scaffold_workspace())
+    monkeypatch.setattr(scaffold_cli, "build_ssh_connection", lambda received_workspace: RecordingConnection(ok=True))
+    monkeypatch.setattr(
+        scaffold_cli, "copy_workspace_templates",
+        lambda *args: pytest.fail("templates written over an existing repository"),
+    )
+
+    with pytest.raises(RuntimeError, match="already has a git repository"):
+        scaffold_cli.scaffold.body(RecordingContext(), "demo")
+
+
+def test_scaffold_checks_for_a_repository_even_without_git(monkeypatch) -> None:
+    """A repository means there is a project there, whether or not this run would touch git."""
+    monkeypatch.setattr(scaffold_cli, "get_workspace", lambda workspace_module: scaffold_workspace())
+    monkeypatch.setattr(scaffold_cli, "build_ssh_connection", lambda received_workspace: RecordingConnection(ok=True))
+
+    with pytest.raises(RuntimeError, match="already has a git repository"):
+        scaffold_cli.scaffold.body(RecordingContext(), "demo", git=False)
 
 
 def test_copy_template_files_traverses_directories_and_renders_templates(tmp_path, monkeypatch) -> None:
@@ -110,11 +132,11 @@ def test_copy_template_files_traverses_directories_and_renders_templates(tmp_pat
     )
     (source_dir / "README.md").write_text("raw\n", encoding="utf-8")
 
-    monkeypatch.setattr(init_cli, "template_dir", lambda template_name: source_dir)
+    monkeypatch.setattr(scaffold_cli, "template_dir", lambda template_name: source_dir)
     workspace = workspace_record("demo_module")
     conn = RecordingConnection()
 
-    init_cli.copy_template_files(conn, "/home/demo_module", "default", workspace)
+    scaffold_cli.copy_template_files(conn, "/home/demo_module", "default", workspace)
 
     assert conn.uploads["/home/demo_module/web/settings.py"] == (
         'HOST = "demo-module.localhost"\nNAME = "demo_module"\n'
@@ -125,9 +147,9 @@ def test_copy_template_files_traverses_directories_and_renders_templates(tmp_pat
 
 
 def test_default_opencode_template_uses_workspace_reference_without_server_credentials() -> None:
-    template_path = init_cli.TEMPLATES_DIR / "default" / "opencode.tpl.jsonc"
+    template_path = scaffold_cli.TEMPLATES_DIR / "default" / "opencode.tpl.jsonc"
 
-    rendered = init_cli.render_template_file(template_path, workspace_record())
+    rendered = scaffold_cli.render_template_file(template_path, workspace_record())
 
     assert '"demo"' in rendered
     assert '"path": "/home/demo"' in rendered

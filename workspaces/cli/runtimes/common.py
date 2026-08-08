@@ -84,5 +84,12 @@ def print_runtimes(runtimes: list[client.RuntimeRecord]) -> None:
     width = max(len(runtime.program_name) for runtime in runtimes)
     for runtime in sorted(runtimes, key=lambda runtime: runtime.program_name):
         port = f":{runtime.port}" if runtime.port else ""
-        state = "enabled" if runtime.is_enabled else "disabled"
-        print(f"{runtime.program_name:<{width}}  {runtime.type:<8} {state:<8} {port}")
+        state = runtime_state(runtime)
+        print(f"{runtime.program_name:<{width}}  {runtime.type:<8} {state:<11} {port}")
+
+
+def runtime_state(runtime: client.RuntimeRecord) -> str:
+    """Where a runtime is in its life: added, installed, and only then enabled."""
+    if runtime.is_enabled:
+        return "enabled"
+    return "installed" if runtime.installed_at else "uninstalled"

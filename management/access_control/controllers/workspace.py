@@ -30,6 +30,7 @@ class WorkspaceSchema(Schema):
     django_module: str
     setup: dict[str, str]
     ssh: WorkspaceSSHSchema
+    git_public_key: str
 
 
 class WorkspaceCreateSchema(ModelSchema):
@@ -49,6 +50,7 @@ class WorkspaceSSHPatchSchema(Schema):
 class WorkspacePatchSchema(Schema):
     setup: dict[str, str] | None = None
     ssh: WorkspaceSSHPatchSchema | None = None
+    git_public_key: str | None = None
 
 
 class WorkspaceCreatedSchema(WorkspaceSchema):
@@ -153,6 +155,11 @@ def patch_workspace(request: HttpRequest, workspace_module: str, data: Workspace
     if ssh_updates:
         workspace.ssh = {**workspace.ssh, **ssh_updates}
         update_fields.append("ssh")
+
+    git_public_key = payload.pop("git_public_key", None)
+    if git_public_key is not None:
+        workspace.git_public_key = git_public_key.strip()
+        update_fields.append("git_public_key")
 
     if update_fields:
         workspace.save(update_fields=update_fields)

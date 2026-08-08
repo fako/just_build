@@ -65,6 +65,7 @@ def test_list_workspaces(control_client):
                 "port": None,
                 "identity_file": None,
             },
+            "git_public_key": "",
         },
         {
             "id": str(workspace_a.id),
@@ -80,6 +81,7 @@ def test_list_workspaces(control_client):
                 "port": None,
                 "identity_file": None,
             },
+            "git_public_key": "",
         },
     ]
 
@@ -105,6 +107,7 @@ def test_get_workspace(control_client):
             "port": None,
             "identity_file": None,
         },
+        "git_public_key": "",
     }
 
 
@@ -181,6 +184,39 @@ def test_patch_workspace_setup_and_ssh_metadata(control_client):
         "port": 2222,
         "identity_file": "workspaces/src/ssh/acme/id_ed25519",
     }
+
+
+@pytest.mark.django_db
+def test_patch_workspace_git_public_key(control_client):
+    workspace = Workspace.objects.create(name="Acme", module="acme")
+
+    response = control_client.patch(
+        f"/api/v1/workspaces/{workspace.module}/",
+        data={"git_public_key": "ssh-ed25519 AAAAC3Nz acme@workspace.local\n"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["git_public_key"] == "ssh-ed25519 AAAAC3Nz acme@workspace.local"
+
+    workspace.refresh_from_db()
+    # Stored without the newline ssh-keygen leaves behind, so it can be pasted straight into a
+    # deploy key field out of the admin.
+    assert workspace.git_public_key == "ssh-ed25519 AAAAC3Nz acme@workspace.local"
+
+
+@pytest.mark.django_db
+def test_patch_workspace_keeps_the_git_public_key_it_is_not_given(control_client):
+    workspace = Workspace.objects.create(name="Acme", module="acme", git_public_key="ssh-ed25519 AAAAC3Nz")
+
+    response = control_client.patch(
+        f"/api/v1/workspaces/{workspace.module}/",
+        data={"setup": {"ssh_access": "2026-03-25T11:00:00Z"}},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["git_public_key"] == "ssh-ed25519 AAAAC3Nz"
 
 
 @pytest.mark.django_db

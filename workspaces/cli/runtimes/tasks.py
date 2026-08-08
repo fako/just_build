@@ -12,9 +12,24 @@ from invoke.context import Context
 from invoke.tasks import task
 
 from workspaces.cli.client import get_workspace
-from workspaces.cli.common import build_ssh_connection, ensure_workspace_log_dir, ensure_workspaces_container
+from workspaces.cli.common import (
+    build_ssh_connection,
+    ensure_workspace_log_dir,
+    ensure_workspaces_container,
+    log_setup_step,
+    require_setup_steps,
+)
 from workspaces.cli.runtimes import client
-from workspaces.cli.runtimes.common import apply_configs, print_runtimes, resolve_runtime
+from workspaces.cli.runtimes.common import (
+    apply_configs,
+    print_runtimes,
+    resolve_runtime,
+    restart_workspace_runtimes,
+    stop_workspace_runtimes,
+)
+
+
+INSTALL_REQUIRED_SETUP_STEPS = ("workspace_created", "home_created", "secrets_created", "ssh_access")
 
 
 @task(
@@ -48,7 +63,7 @@ def add(ctx: Context, workspace_module: str, type: str, name: str, port: int | N
         print(f"Port: {runtime.port}")
     print(f"Log file: {runtime.log_path}")
     print("Next step:")
-    print(f"  invoke runtimes.enable --workspace-module={workspace_module} --name={runtime.name}")
+    print(f"  invoke runtimes.install --workspace-module={workspace_module} --name={runtime.name}")
 
 
 @task(help={
@@ -77,6 +92,41 @@ def configure(ctx: Context, workspace_module: str, name: str, configuration: str
 
     print("")
     print(f"Configured {updated.program_name}: {json.dumps(updated.configuration)}")
+
+
+@task(help={
+    "workspace_module": "Workspace that owns the runtime",
+    "name": "Runtime name",
+    "rebuild": "Throw the workspace virtualenv away and build it again from scratch",
+})
+def install(ctx: Context, workspace_module: str, name: str, rebuild: bool = False):
+    """Install what a runtime needs inside its workspace, which is what makes it enableable."""
+    workspace = get_workspace(workspace_module)
+    require_setup_steps(workspace, INSTALL_REQUIRED_SETUP_STEPS)
+    runtime = resolve_runtime(workspace_module, name)
+    install_commands = client.get_install_commands(runtime.id)
+
+    # Management decides what installing this type means; the CLI is what has an SSH identity for
+    # the workspace user. The same split as sync, one step earlier in the runtime's life.
+    connection = build_ssh_connection(workspace)
+    if rebuild:
+        # The virtualenv belongs to the workspace, so every runtime in it goes down with it.
+        stop_workspace_runtimes(workspace.module)
+        connection.run(f"cd {install_commands.directory} && rm -rf venv", echo=True)
+
+    for command in install_commands.commands:
+        connection.run(f"cd {install_commands.directory} && {command}", echo=True, pty=True)
+
+    client.mark_runtime_installed(runtime.id)
+    log_setup_step(workspace.module, "dependencies_installed")
+
+    if rebuild:
+        restart_workspace_runtimes(workspace.module)
+
+    print("")
+    print(f"Installed {runtime.program_name}.")
+    print("Next step:")
+    print(f"  invoke runtimes.enable --workspace-module={workspace_module} --name={runtime.name}")
 
 
 @task(help={"workspace_module": "Workspace that owns the runtime", "name": "Runtime name"})

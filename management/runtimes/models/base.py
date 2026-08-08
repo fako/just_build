@@ -71,6 +71,7 @@ class Runtime(models.Model):
     # Only runtimes that serve HTTP hold a port, and it is unique across the whole container.
     port = models.PositiveIntegerField(null=True, blank=True, unique=True)
     is_enabled = models.BooleanField(default=False)
+    installed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     modified_at = models.DateTimeField(auto_now=True)
 
@@ -199,3 +200,19 @@ class SupervisordRuntime(Runtime):
         Run by the CLI over SSH as the workspace user, from the workspace home directory.
         """
         return ["venv/bin/python -m pip install -e ."]
+
+    def install_commands(self) -> list[str]:
+        """
+        Shell commands that make a workspace able to run this runtime at all.
+
+        Run once before the runtime is enabled, by the same CLI over SSH that runs sync_commands().
+        The virtualenv belongs to the workspace rather than to one runtime, so a second runtime
+        installs into the one that is already there; `runtimes.install --rebuild` is what throws it
+        away. The pyproject check is here rather than in the CLI because needing one is a property
+        of this type, not of every runtime that will ever exist.
+        """
+        return [
+            "test -f pyproject.toml || { echo 'No pyproject.toml to install from.' >&2; exit 1; }",
+            "test -d venv || python3 -m venv venv --copies --upgrade-deps",
+            *self.sync_commands(),
+        ]

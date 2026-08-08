@@ -28,7 +28,7 @@ class RuntimeForm(forms.ModelForm):
 @admin.register(Runtime)
 class RuntimeAdmin(admin.ModelAdmin):
     form = RuntimeForm
-    list_display = ("program_name", "workspace", "type", "port", "is_enabled")
+    list_display = ("program_name", "workspace", "type", "port", "installed_at", "is_enabled")
     list_filter = ("type", "is_enabled", "workspace")
     search_fields = ("name", "workspace__name", "workspace__module")
     readonly_fields = ("id", "created_at", "modified_at", "program_name", "log_path")

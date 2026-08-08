@@ -439,3 +439,12 @@ def require_setup_steps(workspace: WorkspaceRecord, steps: tuple[str, ...]) -> N
         raise RuntimeError(
             f"Workspace '{workspace.module}' is missing required setup steps: {', '.join(sorted(missing_steps))}"
         )
+
+
+def require_any_setup_step(workspace: WorkspaceRecord, steps: tuple[str, ...]) -> None:
+    """For steps that have more than one way of being reached, such as scaffolding or cloning."""
+    if not any(step in workspace.setup for step in steps):
+        raise RuntimeError(
+            f"Workspace '{workspace.module}' is missing all of these setup steps, "
+            f"and needs one of them: {', '.join(sorted(steps))}"
+        )

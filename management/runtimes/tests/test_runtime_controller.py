@@ -1,4 +1,5 @@
 import pytest
+from django.utils import timezone
 
 from access_control.models import Workspace
 from runtimes.models import Runtime
@@ -131,10 +132,51 @@ def test_patch_runtime_rejects_invalid_configuration(control_client, django_runt
 
 @pytest.mark.django_db
 def test_enable_and_disable_flip_the_flag(control_client, workspace):
-    runtime = Runtime.objects.create(workspace=workspace, type="celery", name="worker")
+    runtime = Runtime.objects.create(workspace=workspace, type="celery", name="worker", installed_at=timezone.now())
 
     assert control_client.post(f"/api/v1/runtimes/{runtime.id}/enable/").json()["is_enabled"] is True
     assert control_client.post(f"/api/v1/runtimes/{runtime.id}/disable/").json()["is_enabled"] is False
+
+
+@pytest.mark.django_db
+def test_enable_refuses_a_runtime_that_was_never_installed(control_client, workspace):
+    runtime = Runtime.objects.create(workspace=workspace, type="celery", name="worker")
+
+    response = control_client.post(f"/api/v1/runtimes/{runtime.id}/enable/")
+
+    assert response.status_code == 409
+    # The message is the command that fixes it, because that is the whole content of the failure.
+    assert "runtimes.install" in response.json()["detail"]
+    assert "--workspace-module=magic_match --name=worker" in response.json()["detail"]
+    runtime.refresh_from_db()
+    assert runtime.is_enabled is False
+
+
+@pytest.mark.django_db
+def test_marking_a_runtime_installed_lets_it_be_enabled(control_client, workspace):
+    runtime = Runtime.objects.create(workspace=workspace, type="celery", name="worker")
+
+    response = control_client.post(f"/api/v1/runtimes/{runtime.id}/installed/")
+
+    assert response.status_code == 200
+    assert response.json()["installed_at"] is not None
+    assert control_client.post(f"/api/v1/runtimes/{runtime.id}/enable/").json()["is_enabled"] is True
+
+
+@pytest.mark.django_db
+def test_install_commands_build_the_virtualenv_before_syncing(control_client, django_runtime, celery_runtime):
+    django_commands = control_client.get(f"/api/v1/runtimes/{django_runtime.id}/install-commands/").json()
+    celery_commands = control_client.get(f"/api/v1/runtimes/{celery_runtime.id}/install-commands/").json()
+
+    assert django_commands["directory"] == "/home/magic_match"
+    assert django_commands["commands"] == [
+        "test -f pyproject.toml || { echo 'No pyproject.toml to install from.' >&2; exit 1; }",
+        "test -d venv || python3 -m venv venv --copies --upgrade-deps",
+        "venv/bin/python -m pip install -e .",
+        "venv/bin/python manage.py collectstatic --noinput",
+    ]
+    # A Celery worker serves no static files, so installing it stops at its dependencies.
+    assert celery_commands["commands"][-1] == "venv/bin/python -m pip install -e ."
 
 
 @pytest.mark.django_db

@@ -29,6 +29,7 @@ class WorkspaceRecord(BaseModel):
     slug: str
     django_module: str
     setup: dict[str, str]
+    git_public_key: str = ""
     # Only present on the response that creates the workspace.
     api_key: str | None = None
 
@@ -78,12 +79,15 @@ def get_workspace(workspace_module: str) -> WorkspaceRecord:
 
 
 def patch_workspace(workspace_module: str, *, setup: dict[str, str] | None = None,
-                    ssh: dict[str, str | int] | None = None) -> WorkspaceRecord:
+                    ssh: dict[str, str | int] | None = None,
+                    git_public_key: str | None = None) -> WorkspaceRecord:
     payload: dict[str, object] = {}
     if setup:
         payload["setup"] = setup
     if ssh:
         payload["ssh"] = ssh
+    if git_public_key is not None:
+        payload["git_public_key"] = git_public_key
 
     try:
         response = requests.patch(

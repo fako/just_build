@@ -1,12 +1,12 @@
 from invoke.collection import Collection
 
-from workspaces.cli.runtimes.adopt import adopt
 from workspaces.cli.runtimes.tasks import (
     add,
     configure,
     apply,
     disable,
     enable,
+    install,
     list_runtimes,
     logs,
     remove,
@@ -21,8 +21,8 @@ from workspaces.cli.runtimes.tasks import (
 namespace = Collection("runtimes")
 namespace.add_task(list_runtimes)
 namespace.add_task(add)
-namespace.add_task(adopt)
 namespace.add_task(configure)
+namespace.add_task(install)
 namespace.add_task(enable)
 namespace.add_task(disable)
 namespace.add_task(apply)

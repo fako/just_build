@@ -1,4 +1,8 @@
-* When doing a workspaces.sync the SSH secrets under $HOME/.ssh/id_ed25519 get a permission reset somehow and that messes up SSH access
+* When doing a workspaces.sync the SSH secrets under $HOME/.ssh/id_ed25519 get a permission reset somehow and that messes up SSH access.
+  Git commands route around this by loading the key into an ssh-agent instead of letting ssh read the file, so the
+  permissions only matter to anything that uses the key directly.
+* Workspaces created before workspaces.create generated a git keypair have no key in $HOME/.ssh, so workspaces.clone-repo
+  refuses them for a missing `git_key_created` step. They need a way to get one without being recreated.
 * Add more runtime types: FastAPI, Node and Laravel. The registry and templates are the only places that need touching.
 * Celery beat as its own runtime type instead of the embedded `--beat` flag
 
