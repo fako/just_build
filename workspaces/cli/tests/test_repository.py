@@ -93,6 +93,33 @@ def keygen_connection() -> RecordingConnection:
     })
 
 
+def test_agent_command_exports_the_git_ssh_command_itself() -> None:
+    """
+    The value holds spaces, and Fabric's env= would break on them.
+
+    It prefixes the command with an unescaped `export NAME=value`, so `ssh -o Strict...` ended the
+    assignment at the space and the shell rejected `-o` as an identifier. Quoted into the command,
+    it is an ordinary shell assignment.
+    """
+    command = repository.agent_command("/home/demo", "demo", "git fetch origin")
+
+    assert f"export GIT_SSH_COMMAND={repository.GIT_SSH_COMMAND!r}".replace('"', "'") in command
+    assert "export GIT_SSH_COMMAND=ssh -o" not in command
+
+
+def test_fetch_origin_passes_no_environment_to_the_remote_shell() -> None:
+    conn = RecordingConnection()
+
+    repository.fetch_origin(
+        conn, "/home/demo", workspace_record(), "git@github.com:owner/repo.git", "ssh-ed25519 AAAA", "admin-url",
+    )
+
+    fetch_call = next(call for call in conn.calls if "git fetch" in str(call["command"]))
+    # Nothing in this module may use env= over SSH, whatever the value is.
+    assert fetch_call["env"] is None
+    assert "GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new'" in str(fetch_call["command"])
+
+
 def test_ensure_workspace_git_key_generates_the_key_with_the_password_out_of_the_command() -> None:
     conn = keygen_connection()
 
@@ -204,7 +231,6 @@ def test_fetch_origin_runs_one_agent_for_the_whole_fetch() -> None:
     assert command.endswith("; status=$?; ssh-agent -k > /dev/null 2>&1; exit $status")
     # A pty is what lets ssh-add ask for the key password.
     assert fetch_call["pty"] is True
-    assert fetch_call["env"] == {"GIT_SSH_COMMAND": repository.GIT_SSH_COMMAND}
 
 
 def test_fetch_origin_reports_a_rejected_key_with_the_key_to_install() -> None:

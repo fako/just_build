@@ -18,6 +18,11 @@ from workspaces.cli.client import WorkspaceRecord
 WORKSPACE_KEY_COMMENT_DOMAIN = "workspace.local"
 # Accepting a remote host key on first contact. The alternative is an interactive prompt in the
 # middle of a fetch, which is no more of a verification than this is.
+#
+# Nothing in this module passes env= to conn.run, and nothing should. Fabric cannot set an
+# environment variable over SSH, so it prefixes the command with `export NAME=value` built by string
+# formatting, with no escaping: a value holding a space ends the assignment, and one holding ';'
+# runs what follows it. Quote values into the command instead, or answer a prompt for them.
 GIT_SSH_COMMAND = "ssh -o StrictHostKeyChecking=accept-new"
 # What a git remote says when it does not accept the workspace key. Anything matching means the key
 # is the thing to fix, so the failure is reported with the key to install rather than as raw output.
@@ -193,6 +198,10 @@ def agent_command(repo_dir: str, workspace_module: str, git_command: str) -> str
     private_key = workspace_key_path(workspace_module)
     return (
         f"cd {quote(repo_dir)}"
+        # Exported here rather than handed to conn.run(env=...): Fabric has no way to set an
+        # environment variable over SSH, so it prefixes the command with an unescaped `export`, and
+        # a value holding spaces ends the assignment early. Quoted, it is just a shell assignment.
+        f" && export GIT_SSH_COMMAND={quote(GIT_SSH_COMMAND)}"
         ' && eval "$(ssh-agent -s)" > /dev/null'
         f" && ssh-add {quote(private_key)}"
         f" && {git_command}"
@@ -228,7 +237,7 @@ def fetch_origin(conn, repo_dir: str, workspace: WorkspaceRecord, repository: st
     command = agent_command(
         repo_dir, workspace.module, "git fetch --tags --prune origin && git remote set-head origin --auto",
     )
-    result = conn.run(command, env={"GIT_SSH_COMMAND": GIT_SSH_COMMAND}, echo=True, pty=True, warn=True)
+    result = conn.run(command, echo=True, pty=True, warn=True)
     if not result.ok:
         raise RuntimeError(
             describe_authentication_failure(workspace, repository, public_key, admin_url, command_output(result))
