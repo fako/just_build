@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from shlex import quote
 
+from invoke.watchers import Responder
+
 from workspaces.cli.client import WorkspaceRecord
 
 
@@ -75,16 +77,55 @@ def ensure_workspace_git_key(conn, workspace_module: str, key_password: str) -> 
     existing = conn.run(f"test -f {quote(private_key)}", hide=True, warn=True)
     if not existing.ok:
         conn.run(f"mkdir -p {quote(key_dir)} && chmod 700 {quote(key_dir)}", echo=True)
-        # The password travels as an environment variable, so it stays out of the echoed command.
-        conn.run(
-            f'ssh-keygen -t ed25519 -f {quote(private_key)} -N "$WORKSPACE_KEY_PASSWORD"'
-            f" -C {quote(f'{workspace_module}@{WORKSPACE_KEY_COMMENT_DOMAIN}')}",
-            env={"WORKSPACE_KEY_PASSWORD": key_password},
-            echo=True,
-        )
+        generate_workspace_git_key(conn, workspace_module, private_key, key_password)
         conn.run(f"chmod 600 {quote(private_key)}", echo=True)
 
     return read_workspace_git_key(conn, workspace_module)
+
+
+def generate_workspace_git_key(conn, workspace_module: str, private_key: str, key_password: str) -> None:
+    """
+    Run ssh-keygen, answering its passphrase prompts rather than passing the password to it.
+
+    The password reaches ssh-keygen through the terminal and nothing else. Neither -N nor an
+    environment variable would do: Fabric puts env vars into the remote command line verbatim, with
+    no escaping at all, so a password holding '&' would end the export and stop the key ever being
+    generated, and one holding ';' would run whatever followed it. A command line is also the wrong
+    place for it regardless of escaping, because /proc/<pid>/cmdline is readable by every other
+    workspace in the container.
+    """
+    passphrase_prompts = [
+        Responder(pattern=r"Enter passphrase", response=f"{key_password}\n"),
+        Responder(pattern=r"Enter same passphrase", response=f"{key_password}\n"),
+    ]
+    conn.run(
+        f"ssh-keygen -t ed25519 -f {quote(private_key)}"
+        f" -C {quote(f'{workspace_module}@{WORKSPACE_KEY_COMMENT_DOMAIN}')}",
+        pty=True,
+        hide=True,
+        watchers=passphrase_prompts,
+        echo=True,
+    )
+    assert_key_password_applied(conn, private_key, key_password)
+
+
+def assert_key_password_applied(conn, private_key: str, key_password: str) -> None:
+    """
+    Refuse to hand back a key that is not protected when a password was asked for.
+
+    The prompts are answered by pattern, so a change in what ssh-keygen prints would leave a key
+    with no passphrase on it. Failing loudly is the difference between that and handing someone a
+    key they believe is protected.
+    """
+    if not key_password:
+        return
+
+    unprotected = conn.run(f'ssh-keygen -y -P "" -f {quote(private_key)}', hide=True, warn=True)
+    if unprotected.ok:
+        raise RuntimeError(
+            f"Generated {private_key} without the password that was asked for. "
+            "Remove the key and try again; do not use it as a deploy key."
+        )
 
 
 def read_workspace_git_key(conn, workspace_module: str) -> str:
