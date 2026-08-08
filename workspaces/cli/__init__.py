@@ -11,12 +11,10 @@ from workspaces.cli.clone import clone_repo
 from workspaces.cli.create import create
 from workspaces.cli.remove import remove
 from workspaces.cli.scaffold import scaffold
-from workspaces.cli.setup import setup
 from workspaces.cli.test import workspaces_test
 
 
 namespace = Collection("workspaces")
-namespace.add_task(setup)
 namespace.add_task(create)
 namespace.add_task(scaffold)
 namespace.add_task(clone_repo)

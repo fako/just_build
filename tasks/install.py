@@ -14,6 +14,9 @@ from invoke.exceptions import Exit
 from invoke.tasks import task
 from invoke.watchers import Responder, FailingResponder
 
+from workspaces.cli.common import ensure_ssh_host_keys
+from workspaces.cli.constants import SSH_CONFIG_PATH
+
 
 HOSTS_FILE = Path("/etc/hosts")
 HOSTS_IP = "127.0.0.1"
@@ -31,6 +34,8 @@ SECRET_KEY_LENGTH = 50
 # Variables without a generator are copied over unchanged, so anything that looks like a secret but
 # is missing from GENERATORS is worth a warning rather than a silent placeholder in .env.
 SECRET_NAME_HINTS = ("PASSWORD", "SECRET", "TOKEN", "API_KEY")
+
+USER_SSH_CONFIG = Path.home() / ".ssh" / "config"
 
 
 def _repository_root() -> Path:
@@ -198,6 +203,42 @@ def hosts_file(ctx: Context) -> None:
     print(f"[install] Updated {HOSTS_FILE}")
 
 
+def _check_ssh_config_include() -> bool:
+    """
+    Report whether the user's SSH config includes the generated workspace aliases.
+
+    The fabfile addresses workspaces by alias and fails to resolve them without this, which looks
+    like a connection problem rather than a missing line.
+    """
+    include_line = f"Include {SSH_CONFIG_PATH}"
+    if USER_SSH_CONFIG.exists() and str(SSH_CONFIG_PATH) in USER_SSH_CONFIG.read_text():
+        return True
+
+    print("")
+    print(f"Generated workspace SSH aliases are not included from {USER_SSH_CONFIG}.")
+    print("Add this line at the top of that file to use 'fab -H <alias>' and Cursor Remote SSH:")
+    print("")
+    print(f"    {include_line}")
+    return False
+
+
+@task
+def ssh(ctx: Context) -> None:
+    """
+    Generate SSH host keys for the workspaces container and check the SSH config include.
+
+    Run this before building, because the workspaces image copies the host keys in at build time.
+    """
+    generated = ensure_ssh_host_keys(ctx)
+    if not generated:
+        print("SSH host keys already exist. Delete them first to regenerate.")
+    else:
+        print("\nSSH host keys generated. Rebuild the container to use them:")
+        print("  docker compose --profile workspaces up --build")
+
+    _check_ssh_config_include()
+
+
 @task(name="management_database", help={
     "recreate": "Recreates the database and role before migrating",
     "force_password": "Sets this password for all superusers whose configured password is null",
@@ -248,4 +289,4 @@ def management_database(ctx: Context, recreate: bool = True, force_password: str
             )
 
 
-namespace = Collection("install", environment, hosts_file, management_database)
+namespace = Collection("install", environment, hosts_file, ssh, management_database)

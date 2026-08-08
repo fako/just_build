@@ -54,7 +54,7 @@ Each workspace can restart its own runtimes by calling the management API with t
 
 ```bash
 # Generate SSH host keys (first time only)
-invoke workspaces.setup
+invoke install.ssh
 
 # Start the container
 docker compose --profile workspaces up --build
