@@ -1,5 +1,7 @@
 volumes:
   postgres:
+  workspaces_homes:
+  workspaces_secrets:
   workspaces_ssh_authorized_keys:
   workspaces_state:
 
@@ -98,8 +100,13 @@ services:
       # Supervisord RPC, on loopback so management can also drive it while running on the host.
       - "127.0.0.1:9001:9001"
     volumes:
-      - ./workspaces/src/repos:/home
-      - ./workspaces/src/secrets:/workspaces/secrets
+      # Workspace homes and secrets are the workspaces' own files, owned by their container users.
+      # They stay in volumes rather than bind mounts so the repository never collects directories
+      # the host user cannot read, and so a git clean cannot take a workspace with it.
+      - workspaces_homes:/home
+      - workspaces_secrets:/workspaces/secrets
+      # Generated config stays bind mounted: the host CLI is what writes it, from what management
+      # renders, and it is useful to be able to read it without entering the container.
       - ./workspaces/src/supervisor:/etc/supervisor/conf.d
       - ./workspaces/src/nginx:/etc/nginx/conf.d
       - workspaces_ssh_authorized_keys:/etc/ssh/authorized_keys

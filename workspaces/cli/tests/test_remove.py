@@ -147,16 +147,19 @@ def test_remove_container_workspace_removes_mounts_key_and_persistent_account(mo
     ]
 
 
-def test_remove_host_workspace_removes_all_workspace_directories(tmp_path, monkeypatch) -> None:
-    paths = [tmp_path / name for name in ("repo", "secret", "key")]
-    for path in paths:
-        path.mkdir()
-        (path / "file").write_text("data")
+def test_remove_host_workspace_removes_the_control_side_keypair(tmp_path, monkeypatch) -> None:
+    key_dir = tmp_path / "key"
+    key_dir.mkdir()
+    (key_dir / "id_ed25519").write_text("data")
 
-    monkeypatch.setattr(remove_cli, "workspace_repo_dir", lambda module: paths[0])
-    monkeypatch.setattr(remove_cli, "workspace_secret_dir", lambda module: paths[1])
-    monkeypatch.setattr(remove_cli, "workspace_key_dir", lambda module: paths[2])
+    monkeypatch.setattr(remove_cli, "workspace_key_dir", lambda module: key_dir)
 
     remove_cli.remove_host_workspace("demo")
 
-    assert not any(path.exists() for path in paths)
+    assert not key_dir.exists()
+
+
+def test_remove_host_workspace_accepts_an_already_removed_keypair(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(remove_cli, "workspace_key_dir", lambda module: tmp_path / "gone")
+
+    remove_cli.remove_host_workspace("demo")

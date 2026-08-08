@@ -140,13 +140,27 @@ workspaces/
 └── src/
     ├── nginx/<module>/      # Rendered nginx configs (gitignored)
     ├── ssh/                 # Workspace SSH keypairs (gitignored)
-    ├── supervisor/<module>/ # Rendered supervisor configs (gitignored)
-    └── repos/               # Workspace git repositories → /home/
+    └── supervisor/<module>/ # Rendered supervisor configs (gitignored)
 ```
 
 Everything under `src/nginx` and `src/supervisor` is generated. `invoke runtimes.apply` rewrites it
 from what management renders and deletes whatever management no longer lists, so edits there do not
 survive.
+
+What a workspace itself owns is deliberately not here. Homes and secrets live in Docker volumes, so
+this repository never fills with directories the host user cannot read and a `git clean` cannot take
+a workspace with it:
+
+| Volume | Mount | Holds |
+|--------|-------|-------|
+| `workspaces_homes` | `/home` | One home directory per workspace: the project, its virtualenv, its agent state |
+| `workspaces_secrets` | `/workspaces/secrets` | Per workspace, `.env` and `.pgpass`, `750 root:<module>` |
+| `workspaces_ssh_authorized_keys` | `/etc/ssh/authorized_keys` | One inbound public key per workspace |
+| `workspaces_state` | `/workspaces/state` | The persistent account database and collected static files |
+
+Reach into them through the container, not the host: `docker compose exec workspaces ...`, or SSH in
+as the workspace user. The one exception is the control side's own private key, which stays under
+`src/ssh/<module>/` because Fabric, `ssh` and Cursor all read it from the host.
 
 ## Project Onboarding
 
@@ -320,8 +334,8 @@ Host myproject-workspace
 
 ### 4. Scaffold or Clone the Project Repository
 
-The project home lives under `workspaces/src/repos/<workspace-module>/` and is mounted to `/home/<workspace-module>/`
-inside the container.
+The project home is `/home/<workspace-module>/` inside the container, in the `workspaces_homes` volume. It is not
+reachable from the host filesystem; scaffolding, cloning and editing all happen over SSH as the workspace user.
 
 For a new project, scaffold it over SSH as the project user:
 

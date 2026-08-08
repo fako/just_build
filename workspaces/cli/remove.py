@@ -1,4 +1,3 @@
-from pathlib import Path
 from shutil import rmtree
 from shlex import quote
 
@@ -7,14 +6,14 @@ from invoke.tasks import task
 
 from workspaces.cli.client import ManagementClientError, delete_workspace
 from workspaces.cli.common import (
+    container_workspace_home_dir,
+    container_workspace_secret_dir,
     docker_exec,
     ensure_workspace_state_account_files,
     ensure_workspaces_container,
     refresh_generated_ssh_config,
     sync_workspace_state_account_files,
     workspace_key_dir,
-    workspace_repo_dir,
-    workspace_secret_dir,
 )
 from workspaces.cli.runtimes import client as runtimes_client
 from workspaces.cli.runtimes.common import apply_configs
@@ -71,12 +70,12 @@ def remove_container_workspace(ctx: Context, workspace_module: str) -> None:
     quoted_module = quote(workspace_module)
     quoted_state = quote("/workspaces/state")
     quoted_paths = " ".join(
-        quote(str(path))
+        quote(path)
         for path in (
-            Path("/home") / workspace_module,
-            Path("/workspaces/secrets") / workspace_module,
-            Path("/etc/ssh/authorized_keys") / workspace_module,
-            Path("/var/log/workspaces") / workspace_module,
+            container_workspace_home_dir(workspace_module),
+            container_workspace_secret_dir(workspace_module),
+            f"/etc/ssh/authorized_keys/{workspace_module}",
+            f"/var/log/workspaces/{workspace_module}",
         )
     )
     docker_exec(ctx, f"rm -rf -- {quoted_paths}", user="root")
@@ -101,15 +100,11 @@ def remove_container_workspace(ctx: Context, workspace_module: str) -> None:
 
 
 def remove_host_workspace(workspace_module: str) -> None:
-    # The repo and secrets are normally removed through their container mounts.
-    # Removing them here as well makes this helper complete and independently testable.
-    for path in (
-        workspace_repo_dir(workspace_module),
-        workspace_secret_dir(workspace_module),
-        workspace_key_dir(workspace_module),
-    ):
-        if path.exists():
-            rmtree(path)
+    # All that is left on the host is the keypair the control side signs in with. The home and the
+    # secrets live in volumes, and remove_container_workspace is what deletes those.
+    key_dir = workspace_key_dir(workspace_module)
+    if key_dir.exists():
+        rmtree(key_dir)
 
 
 @task(help={"workspace_module": "Workspace module to remove completely"})

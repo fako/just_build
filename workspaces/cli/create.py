@@ -11,11 +11,9 @@ from workspaces.cli.common import (
     build_ssh_connection,
     create_container_user_and_home,
     ensure_workspace_secret_file,
-    ensure_workspace_secret_root,
     ensure_workspace_keypair,
     ensure_workspace_log_dir,
     ensure_workspaces_container,
-    grant_host_workspace_access,
     install_workspace_shell_environment,
     log_setup_step,
     publish_authorized_key,
@@ -58,7 +56,6 @@ def prompt_key_password(key_password: str | None) -> str:
 def create(ctx, name: str, module: str, django_module: str = "web", key_password: str | None = None):
     """Create a workspace, its Linux account, secrets, SSH access and its own git SSH key."""
     assert_workspace_state_clean(module)
-    ensure_workspace_secret_root()
     ensure_workspaces_container(ctx)
     assert_container_workspace_absent(ctx, module)
     # Asked for after the checks that refuse to create anything, so nobody types a password for a
@@ -76,7 +73,6 @@ def create(ctx, name: str, module: str, django_module: str = "web", key_password
 
     # The plaintext API key exists only in this response, so it has to reach the workspace .env now.
     secret_path = ensure_workspace_secret_file(ctx, workspace.module, workspace.api_key)
-    grant_host_workspace_access(ctx, workspace.module)
     install_workspace_shell_environment(ctx, workspace.module)
     log_setup_step(workspace.module, "secrets_created")
 

@@ -43,7 +43,9 @@ RUN mkdir -p /var/log/supervisor \
     && mkdir -p /var/log/workspaces \
     && mkdir -p /etc/supervisor/conf.d \
     && mkdir -p /etc/nginx/conf.d \
-    && mkdir -p /workspaces/state
+    && mkdir -p /workspaces/state \
+    && mkdir -p /workspaces/secrets \
+    && chmod 711 /workspaces/secrets
 
 COPY container/docker-entrypoint.sh /usr/local/bin/workspaces-entrypoint
 COPY container/load_user_passwords.sh \

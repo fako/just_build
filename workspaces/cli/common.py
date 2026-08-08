@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from os import getuid
+from io import StringIO
 from pathlib import Path
 from secrets import token_urlsafe
 from shlex import quote
@@ -12,8 +12,6 @@ from invoke.context import Context
 from workspaces.cli.client import WorkspaceRecord, get_ssh_config, patch_workspace
 from workspaces.cli.constants import (
     NGINX_DIR,
-    REPOS_DIR,
-    SECRETS_DIR,
     WORKSPACE_SSH_KEYS_DIR,
     SSH_CONFIG_PATH,
     SUPERVISOR_DIR,
@@ -42,20 +40,12 @@ def write_text_file(path: Path, content: str) -> None:
     path.write_text(content)
 
 
-def workspace_repo_dir(workspace_module: str) -> Path:
-    return REPOS_DIR / workspace_module
+def container_workspace_home_dir(workspace_module: str) -> str:
+    return f"/home/{workspace_module}"
 
 
-def workspace_secret_dir(workspace_module: str) -> Path:
-    return SECRETS_DIR / workspace_module
-
-
-def workspace_secret_env_path(workspace_module: str) -> Path:
-    return workspace_secret_dir(workspace_module) / ".env"
-
-
-def workspace_pgpass_path(workspace_module: str) -> Path:
-    return workspace_secret_dir(workspace_module) / ".pgpass"
+def container_workspace_secret_dir(workspace_module: str) -> str:
+    return f"{WORKSPACES_SECRETS_DIR}/{workspace_module}"
 
 
 def container_workspace_secret_env_path(workspace_module: str) -> str:
@@ -79,9 +69,11 @@ def workspace_public_key_path(workspace_module: str) -> Path:
 
 
 def assert_workspace_state_clean(workspace_module: str) -> None:
+    """
+    Check the host state a workspace leaves behind. Its home and secrets are checked separately, by
+    assert_container_workspace_absent, because they live in volumes rather than in this repository.
+    """
     paths_to_check = [
-        workspace_repo_dir(workspace_module),
-        workspace_secret_dir(workspace_module),
         workspace_key_dir(workspace_module),
         SUPERVISOR_DIR / workspace_module,
         NGINX_DIR / workspace_module,
@@ -112,9 +104,10 @@ def ensure_workspace_keypair(ctx: Context, workspace_module: str) -> tuple[Path,
     return private_key, public_key
 
 
-def ensure_workspace_secret_root() -> None:
-    SECRETS_DIR.mkdir(parents=True, exist_ok=True)
-    SECRETS_DIR.chmod(0o711)
+def ensure_workspace_secret_root(ctx: Context) -> None:
+    """Traversable by everyone, listable by nobody: a workspace reaches its own directory and no more."""
+    quoted_root = quote(WORKSPACES_SECRETS_DIR)
+    docker_exec(ctx, f"mkdir -p {quoted_root} && chown root:root {quoted_root} && chmod 711 {quoted_root}", user="root")
 
 
 def render_workspace_secret_env(workspace_module: str, postgres_password: str, api_key: str) -> str:
@@ -208,36 +201,41 @@ def ensure_workspace_database(ctx: Context, workspace: WorkspaceRecord) -> None:
     )
 
 
-def ensure_workspace_secret_file(ctx: Context, workspace_module: str, api_key: str) -> Path:
-    ensure_workspace_secret_root()
+def ensure_workspace_secret_file(ctx: Context, workspace_module: str, api_key: str) -> str:
+    ensure_workspace_secret_root(ctx)
 
-    secret_dir = workspace_secret_dir(workspace_module)
-    secret_path = workspace_secret_env_path(workspace_module)
-    pgpass_path = workspace_pgpass_path(workspace_module)
-    if secret_path.exists():
-        raise RuntimeError(f"Refusing to overwrite existing workspace secret file at {secret_path}")
-    if pgpass_path.exists():
-        raise RuntimeError(f"Refusing to overwrite existing workspace pgpass file at {pgpass_path}")
+    secret_dir = container_workspace_secret_dir(workspace_module)
+    secret_path = container_workspace_secret_env_path(workspace_module)
+    pgpass_path = container_workspace_pgpass_path(workspace_module)
 
-    secret_dir.mkdir(parents=True, exist_ok=False)
-    secret_dir.chmod(0o700)
-    postgres_password = token_urlsafe(32)
-    write_text_file(secret_path, render_workspace_secret_env(workspace_module, postgres_password, api_key))
-    write_text_file(pgpass_path, render_workspace_pgpass(workspace_module, postgres_password))
-    secret_path.chmod(0o600)
-    pgpass_path.chmod(0o600)
-
-    quoted_dir = quote(f"{WORKSPACES_SECRETS_DIR}/{workspace_module}")
-    quoted_owner = f"{quote(workspace_module)}:{quote(workspace_module)}"
-    quoted_pgpass = quote(container_workspace_pgpass_path(workspace_module))
-    docker_exec(
+    existing = docker_exec(
         ctx,
-        f"test -f {quote(container_workspace_secret_env_path(workspace_module))}"
-        f" && chown -R root:{quote(workspace_module)} {quoted_dir}"
-        f" && chmod 750 {quoted_dir}"
-        f" && chmod 640 {quote(container_workspace_secret_env_path(workspace_module))}"
-        f" && chown {quoted_owner} {quoted_pgpass}"
-        f" && chmod 600 {quoted_pgpass}",
+        f"test -e {quote(secret_path)} -o -e {quote(pgpass_path)}",
+        user="root",
+        hide=True,
+        warn=True,
+    )
+    if existing.ok:
+        raise RuntimeError(f"Refusing to overwrite existing workspace secrets in {secret_dir}")
+
+    quoted_dir = quote(secret_dir)
+    quoted_module = quote(workspace_module)
+    docker_exec(ctx, f"mkdir -p {quoted_dir} && chown root:{quoted_module} {quoted_dir} && chmod 750 {quoted_dir}", user="root")
+
+    postgres_password = token_urlsafe(32)
+    write_container_file(
+        ctx,
+        secret_path,
+        render_workspace_secret_env(workspace_module, postgres_password, api_key),
+        owner=f"root:{workspace_module}",
+        mode="640",
+    )
+    write_container_file(
+        ctx,
+        pgpass_path,
+        render_workspace_pgpass(workspace_module, postgres_password),
+        owner=f"{workspace_module}:{workspace_module}",
+        mode="600",
     )
     return secret_path
 
@@ -246,7 +244,7 @@ def install_workspace_shell_environment(ctx: Context, workspace_module: str) -> 
     quoted_module = quote(workspace_module)
     quoted_content = quote(render_workspace_shell_environment(workspace_module))
     for name in (".profile", ".bashrc"):
-        path = quote(f"/home/{workspace_module}/{name}")
+        path = quote(f"{container_workspace_home_dir(workspace_module)}/{name}")
         docker_exec(
             ctx,
             f"printf '%s' {quoted_content} > {path}"
@@ -257,8 +255,8 @@ def install_workspace_shell_environment(ctx: Context, workspace_module: str) -> 
 
 def ensure_workspace_static_dir(ctx: Context, workspace_module: str) -> None:
     quoted_module = quote(workspace_module)
-    quoted_home_dir = quote(f"/home/{workspace_module}")
-    quoted_static_dir = quote(f"/home/{workspace_module}/staticfiles")
+    quoted_home_dir = quote(container_workspace_home_dir(workspace_module))
+    quoted_static_dir = quote(f"{container_workspace_home_dir(workspace_module)}/staticfiles")
     quoted_state_dir = quote(WORKSPACES_STATE_DIR)
     docker_exec(
         ctx,
@@ -279,6 +277,24 @@ def docker_exec(ctx: Context, script: str, *, user: str | None = None, hide: boo
     user_flag = f"--user {quote(user)} " if user else ""
     command = f"docker compose exec -T {user_flag}workspaces sh -lc {quote(script)}"
     return ctx.run(command, echo=not hide, hide=hide, warn=warn)
+
+
+def write_container_file(ctx: Context, path: str, content: str, *, owner: str, mode: str):
+    """
+    Create a file inside the container from content that must not be logged.
+
+    The content travels over stdin rather than inside the command, because docker_exec echoes what
+    it runs and these files hold the workspace's API key and database password. The umask closes the
+    window where the file exists with default permissions before the chmod lands.
+    """
+    quoted_path = quote(path)
+    script = (
+        f"umask 077 && cat > {quoted_path}"
+        f" && chown {quote(owner)} {quoted_path}"
+        f" && chmod {quote(mode)} {quoted_path}"
+    )
+    command = f"docker compose exec -T --user root workspaces sh -lc {quote(script)}"
+    return ctx.run(command, echo=True, in_stream=StringIO(content))
 
 
 def ensure_workspace_log_dir(ctx: Context, workspace_module: str) -> None:
@@ -306,17 +322,19 @@ def assert_container_workspace_absent(ctx: Context, workspace_module: str) -> No
             f"Refusing to create workspace because user '{workspace_module}' already exists in workspaces"
         )
 
-    ssh_key_result = docker_exec(
-        ctx,
-        f"test ! -e /etc/ssh/authorized_keys/{quote(workspace_module)}",
-        hide=True,
-        warn=True,
+    # The home and secret directories outlive the container in their own volumes, so this is the
+    # check that a workspace of this name left nothing behind.
+    occupied_paths = (
+        container_workspace_home_dir(workspace_module),
+        container_workspace_secret_dir(workspace_module),
+        f"/etc/ssh/authorized_keys/{workspace_module}",
     )
-    if not ssh_key_result.ok:
-        raise RuntimeError(
-            "Refusing to create workspace because "
-            f"/etc/ssh/authorized_keys/{workspace_module} already exists in workspaces"
-        )
+    for path in occupied_paths:
+        result = docker_exec(ctx, f"test ! -e {quote(path)}", hide=True, warn=True)
+        if not result.ok:
+            raise RuntimeError(
+                f"Refusing to create workspace because {path} already exists in workspaces"
+            )
 
 
 def ensure_workspace_state_account_files(ctx: Context) -> None:
@@ -336,6 +354,7 @@ def sync_workspace_state_account_files(ctx: Context) -> None:
 def create_container_user_and_home(ctx: Context, workspace_module: str) -> None:
     quoted_module = quote(workspace_module)
     quoted_state_dir = quote(WORKSPACES_STATE_DIR)
+    quoted_home = quote(container_workspace_home_dir(workspace_module))
 
     ensure_workspace_state_account_files(ctx)
     docker_exec(ctx, f"groupadd -P {quoted_state_dir} {quoted_module}")
@@ -343,31 +362,15 @@ def create_container_user_and_home(ctx: Context, workspace_module: str) -> None:
     sync_workspace_state_account_files(ctx)
     docker_exec(
         ctx,
-        f"mkdir -p /home/{quoted_module} && chown -R {quoted_module}:{quoted_module} /home/{quoted_module}",
+        f"mkdir -p {quoted_home} && chown -R {quoted_module}:{quoted_module} {quoted_home}",
     )
-
-
-def grant_host_workspace_access(ctx: Context, workspace_module: str, host_uid: int | None = None) -> None:
-    uid = getuid() if host_uid is None else host_uid
-    quoted_home = quote(f"/home/{workspace_module}")
-    script = (
-        f"setfacl -R -m u:{uid}:rwX {quoted_home}"
-        f" && find {quoted_home} -type d -exec setfacl -m d:u:{uid}:rwX {{}} +"
-    )
-    if workspace_secret_dir(workspace_module).exists():
-        quoted_secrets = quote(f"{WORKSPACES_SECRETS_DIR}/{workspace_module}")
-        script += (
-            f" && setfacl -R -m u:{uid}:rwX {quoted_secrets}"
-            f" && find {quoted_secrets} -type d -exec setfacl -m d:u:{uid}:rwX {{}} +"
-        )
-    docker_exec(ctx, script, user="root")
 
 
 def reset_workspace_ownership(ctx: Context, workspace_module: str) -> None:
     ensure_workspaces_container(ctx)
     quoted_module = quote(workspace_module)
-    quoted_home = quote(f"/home/{workspace_module}")
-    quoted_secrets_dir = quote(f"{WORKSPACES_SECRETS_DIR}/{workspace_module}")
+    quoted_home = quote(container_workspace_home_dir(workspace_module))
+    quoted_secrets_dir = quote(container_workspace_secret_dir(workspace_module))
     quoted_pgpass = quote(container_workspace_pgpass_path(workspace_module))
     docker_exec(
         ctx,
@@ -378,7 +381,6 @@ def reset_workspace_ownership(ctx: Context, workspace_module: str) -> None:
         f" fi",
         user="root",
     )
-    grant_host_workspace_access(ctx, workspace_module)
 
 
 def publish_authorized_key(ctx: Context, workspace_module: str, public_key: str) -> None:
