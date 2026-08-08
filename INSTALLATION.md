@@ -63,8 +63,9 @@ container, so pick whichever suits what you are doing.
 docker compose watch management
 ```
 
-`watch` rebuilds the image when `management/requirements.txt` changes. Code changes are picked up
-straight away, because the repository is mounted over the image and uvicorn runs with `--reload`.
+`watch` syncs code changes into the container, where uvicorn picks them up with `--reload`, and
+rebuilds the image when `management/requirements.txt` changes. Code edits are only live while
+`docker compose watch` is running; a plain `up` serves the code baked into the image.
 
 **On the host**, for debugging with a real debugger attached, by leaving management out of the
 profile:
