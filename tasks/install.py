@@ -3,7 +3,10 @@ from __future__ import annotations
 from getpass import getpass
 from pathlib import Path
 from shlex import quote
+import secrets
+import string
 import tempfile
+import uuid
 
 from invoke.collection import Collection
 from invoke.context import Context
@@ -16,6 +19,19 @@ HOSTS_FILE = Path("/etc/hosts")
 HOSTS_IP = "127.0.0.1"
 HOSTS_MARKER = "# just_build docker compose services"
 
+ENVIRONMENT_FILE = ".env"
+ENVIRONMENT_EXAMPLE_FILE = ".env.example"
+
+# Alphanumeric only. activate.sh sources .env unquoted and docker compose interpolates ${...}, so a
+# value holding $, (, ), ` or quotes breaks one of the two. Length makes up for the smaller alphabet.
+SECRET_ALPHABET = string.ascii_letters + string.digits
+PASSWORD_LENGTH = 32
+SECRET_KEY_LENGTH = 50
+
+# Variables without a generator are copied over unchanged, so anything that looks like a secret but
+# is missing from GENERATORS is worth a warning rather than a silent placeholder in .env.
+SECRET_NAME_HINTS = ("PASSWORD", "SECRET", "TOKEN", "API_KEY")
+
 
 def _repository_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -26,6 +42,47 @@ def _docker_compose_service_names(ctx: Context, compose_path: Path) -> list[str]
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def _random_secret(length: int) -> str:
+    return "".join(secrets.choice(SECRET_ALPHABET) for _ in range(length))
+
+
+def _generate_password(example_value: str) -> str:
+    return _random_secret(PASSWORD_LENGTH)
+
+
+def _generate_secret_key(example_value: str) -> str:
+    return _random_secret(SECRET_KEY_LENGTH)
+
+
+def _generate_api_key(example_value: str) -> str:
+    """
+    Replace the placeholder UUID while keeping the scheme prefix.
+
+    Management partitions the key on ':' and rejects anything whose scheme it does not know, so the
+    prefix has to survive regeneration.
+    """
+    scheme, separator, _ = example_value.partition(":")
+    prefix = f"{scheme}{separator}" if separator else ""
+    return f"{prefix}{uuid.uuid4()}"
+
+
+ENVIRONMENT_GENERATORS = {
+    "INVOKE_POSTGRES_PASSWORD": _generate_password,
+    "INVOKE_WORKSPACES_SUPERVISOR_PASSWORD": _generate_password,
+    "INVOKE_MANAGEMENT_SECURITY_SECRET_KEY": _generate_secret_key,
+    "INVOKE_MANAGEMENT_SECURITY_API_KEY": _generate_api_key,
+    "INVOKE_MANAGEMENT_DATABASE_PASSWORD": _generate_password,
+}
+
+
+def _environment_variable_name(line: str) -> str | None:
+    """Return the variable a .env line assigns, or None for comments and blanks."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        return None
+    return stripped.split("=", maxsplit=1)[0].strip()
+
+
 def _hosts_hostnames(hosts_path: Path) -> set[str]:
     hostnames: set[str] = set()
     for line in hosts_path.read_text().splitlines():
@@ -34,6 +91,62 @@ def _hosts_hostnames(hosts_path: Path) -> set[str]:
             continue
         hostnames.update(tokens[1:])
     return hostnames
+
+
+@task(name="environment", help={
+    "force": "Overwrites an existing .env, replacing every secret in it with a freshly generated one",
+})
+def environment(ctx: Context, force: bool = False) -> None:
+    """
+    Write .env from .env.example, generating a secret for every value that needs one.
+
+    Comments, ordering and non-secret defaults are copied over untouched, so .env stays readable and
+    .env.example remains the place to document new variables.
+    """
+    root = _repository_root()
+    example_path = root / ENVIRONMENT_EXAMPLE_FILE
+    environment_path = root / ENVIRONMENT_FILE
+
+    if not example_path.exists():
+        raise Exit(f"Missing {ENVIRONMENT_EXAMPLE_FILE}: {example_path}")
+    if environment_path.exists() and not force:
+        raise Exit(
+            f"Refusing to overwrite the existing {ENVIRONMENT_FILE}. "
+            f"Pass --force to replace it, which regenerates every secret it holds."
+        )
+
+    lines: list[str] = []
+    generated: list[str] = []
+    unknown_secrets: list[str] = []
+
+    for line in example_path.read_text().splitlines():
+        name = _environment_variable_name(line)
+        if name is None:
+            lines.append(line)
+            continue
+        generator = ENVIRONMENT_GENERATORS.get(name)
+        if generator is None:
+            if any(hint in name for hint in SECRET_NAME_HINTS):
+                unknown_secrets.append(name)
+            lines.append(line)
+            continue
+        example_value = line.split("=", maxsplit=1)[1].strip()
+        lines.append(f"{name}={generator(example_value)}")
+        generated.append(name)
+
+    missing = [name for name in ENVIRONMENT_GENERATORS if name not in generated]
+    if missing:
+        raise Exit(f"{ENVIRONMENT_EXAMPLE_FILE} is missing expected variables: {', '.join(missing)}")
+
+    environment_path.write_text("\n".join(lines) + "\n")
+    # The file holds every secret the stack runs on, so keep it off other accounts on this host.
+    environment_path.chmod(0o600)
+
+    for name in generated:
+        print(f"[environment] Generated {name}")
+    for name in unknown_secrets:
+        print(f"[environment] WARNING: {name} looks like a secret but has no generator, copied as is")
+    print(f"[install] Wrote {environment_path}")
 
 
 @task
@@ -135,4 +248,4 @@ def management_database(ctx: Context, recreate: bool = True, force_password: str
             )
 
 
-namespace = Collection("install", hosts_file, management_database)
+namespace = Collection("install", environment, hosts_file, management_database)

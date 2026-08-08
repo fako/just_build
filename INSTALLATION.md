@@ -13,15 +13,36 @@ Make sure they are installed on your system before installing the project.
 
 ## Setup
 
-First copy the `.env.example` file to `.env` and update the variable values to fit your system.
-For a start the default values will do.
-
 To install the basic environment and tooling you'll need to setup a local environment on a host machine with:
 
 ```bash
 python3 -m venv venv --copies --upgrade-deps
-source activate.sh
+source venv/bin/activate
 pip install -r requirements.txt
+```
+
+Now generate your `.env` from `.env.example`:
+
+```bash
+invoke install.environment
+```
+
+This copies every variable, comment and default from `.env.example` and fills in a freshly generated
+secret for the values that need one: both database passwords, the supervisor password, the Django
+secret key and the control API key the CLI authenticates with. Non-secret defaults like
+`COMPOSE_PROFILES` are copied unchanged, so open `.env` afterwards to fit those to your system.
+
+The task refuses to touch an existing `.env`. Pass `--force` to regenerate one, which replaces every
+secret in it. On an install that already runs, that invalidates the current control API key and
+leaves the passwords out of step with what the containers hold: PostgreSQL only reads
+`INVOKE_POSTGRES_PASSWORD` when it initialises its data volume, so a regenerated password fails to
+authenticate until that volume is recreated.
+
+From here on use `activate.sh` instead of activating the venv directly, because it loads `.env` into
+your shell the way docker compose does:
+
+```bash
+source activate.sh
 ```
 
 To let OpenSSH and Cursor Remote SSH see generated workspace entries, add this once to your user SSH config:
