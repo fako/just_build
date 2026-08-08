@@ -20,7 +20,7 @@ from workspaces.cli.common import (
     refresh_generated_ssh_config,
     workspace_private_key_path,
 )
-from workspaces.cli.constants import WORKSPACES_DIR
+from workspaces.cli.constants import REPOSITORY_DIR
 from workspaces.cli.repository import ensure_workspace_git_key
 
 
@@ -86,7 +86,7 @@ def create(ctx, name: str, module: str, django_module: str = "web", key_password
             "user": workspace.module,
             "host": DEFAULT_HOST,
             "port": DEFAULT_SSH_PORT,
-            "identity_file": str(workspace_private_key_path(workspace.module).relative_to(WORKSPACES_DIR.parent)),
+            "identity_file": str(workspace_private_key_path(workspace.module).relative_to(REPOSITORY_DIR)),
         },
     )
     log_setup_step(workspace.module, "ssh_access")

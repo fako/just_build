@@ -116,10 +116,12 @@ def delete_workspace(workspace_module: str) -> bool:
     return True
 
 
-def get_ssh_config() -> str:
+def get_ssh_config(repository_root: str) -> str:
     url = f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/workspaces/ssh-config/"
     try:
-        response = requests.get(url, headers=control_headers(), timeout=10)
+        response = requests.get(
+            url, params={"repository_root": repository_root}, headers=control_headers(), timeout=10,
+        )
         response.raise_for_status()
     except requests.RequestException as exc:
         raise ManagementClientError(f"Could not fetch generated SSH config: {exc}") from exc

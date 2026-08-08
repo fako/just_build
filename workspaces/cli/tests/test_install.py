@@ -30,7 +30,7 @@ def workspace_record(setup: dict[str, str] | None = None) -> WorkspaceRecord:
             "secrets_created": "now",
             "ssh_access": "now",
         },
-        ssh=WorkspaceRecord.SSHConfig(identity_file="workspaces/src/ssh/demo/id_ed25519"),
+        ssh=WorkspaceRecord.SSHConfig(identity_file="workspaces/ssh/keys/demo/id_ed25519"),
     )
 
 

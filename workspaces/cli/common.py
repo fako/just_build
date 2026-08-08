@@ -12,10 +12,10 @@ from invoke.context import Context
 from workspaces.cli.client import WorkspaceRecord, get_ssh_config, patch_workspace
 from workspaces.cli.constants import (
     NGINX_DIR,
-    WORKSPACE_SSH_KEYS_DIR,
+    REPOSITORY_DIR,
     SSH_CONFIG_PATH,
+    SSH_KEYS_DIR,
     SUPERVISOR_DIR,
-    WORKSPACES_DIR,
 )
 from workspaces.cli.setup import ensure_ssh_host_keys
 
@@ -57,7 +57,13 @@ def container_workspace_pgpass_path(workspace_module: str) -> str:
 
 
 def workspace_key_dir(workspace_module: str) -> Path:
-    return WORKSPACE_SSH_KEYS_DIR / workspace_module
+    """
+    The control side's key for signing in to this workspace.
+
+    It stays on the host rather than in a volume: Fabric, ssh and Cursor Remote SSH all read it from
+    here, and a volume would put it behind root under /var/lib/docker.
+    """
+    return SSH_KEYS_DIR / workspace_module
 
 
 def workspace_private_key_path(workspace_module: str) -> Path:
@@ -412,7 +418,9 @@ def log_setup_step(workspace_module: str, step: str) -> None:
 
 
 def refresh_generated_ssh_config() -> None:
-    generated_config = get_ssh_config()
+    # Identity files are stored relative to the repository, and only this side knows where the
+    # repository is: management sees its own copy at a different path inside its container.
+    generated_config = get_ssh_config(str(REPOSITORY_DIR))
     if "# Automatically generated" not in generated_config:
         raise RuntimeError("Management returned SSH config content without the generated-file warning header.")
     write_text_file(SSH_CONFIG_PATH, generated_config)
@@ -425,7 +433,7 @@ def build_ssh_connection(workspace: WorkspaceRecord) -> Connection:
 
     private_key = Path(identity_file)
     if not private_key.is_absolute():
-        private_key = WORKSPACES_DIR.parent / private_key
+        private_key = REPOSITORY_DIR / private_key
 
     return Connection(
         host=workspace.ssh.host or DEFAULT_HOST,

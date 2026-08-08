@@ -12,6 +12,7 @@ SRC_DIR = WORKSPACES_DIR / "src"
 SUPERVISOR_DIR = SRC_DIR / "supervisor"
 NGINX_DIR = SRC_DIR / "nginx"
 SSH_DIR = WORKSPACES_DIR / "ssh"
+# Both directions of SSH keep their private halves here: the container's own host keys as files, and
+# the control side's per-workspace key in a directory named after the workspace. Gitignored whole.
 SSH_KEYS_DIR = SSH_DIR / "keys"
-WORKSPACE_SSH_KEYS_DIR = SRC_DIR / "ssh"
 SSH_CONFIG_PATH = SSH_DIR / "config"

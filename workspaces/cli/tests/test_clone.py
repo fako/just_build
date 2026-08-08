@@ -36,7 +36,7 @@ def workspace_record(*, setup: dict[str, str] | None = None,
         django_module="web",
         setup=COMPLETE_SETUP if setup is None else setup,
         git_public_key=git_public_key,
-        ssh=WorkspaceRecord.SSHConfig(identity_file="workspaces/src/ssh/demo/id_ed25519"),
+        ssh=WorkspaceRecord.SSHConfig(identity_file="workspaces/ssh/keys/demo/id_ed25519"),
     )
 
 
