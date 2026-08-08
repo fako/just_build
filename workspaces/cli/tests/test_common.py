@@ -15,7 +15,6 @@ def test_render_workspace_secret_env_includes_django_and_libpq_settings() -> Non
     assert "PGDATABASE=demo\n" in content
     assert "PGUSER=demo\n" in content
     assert "PGPASSFILE=/workspaces/secrets/demo/.pgpass\n" in content
-    assert "OPENCODE_ATTACH_URL=http://127.0.0.1:4096\n" in content
     # The workspace calls the management API with these, from inside the container.
     assert "MANAGEMENT_URL=http://management:8000\n" in content
     assert "WORKSPACE_API_KEY=workspace:a-key\n" in content

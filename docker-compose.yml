@@ -1,6 +1,5 @@
 volumes:
   postgres:
-  opencode_data:
   workspaces_ssh_authorized_keys:
   workspaces_state:
 
@@ -86,26 +85,6 @@ services:
       timeout: 5s
       retries: 5
 
-  opencode:
-    profiles: [workspaces]
-    build:
-      dockerfile: "Dockerfile"
-      context: ./services/opencode
-    ports:
-      - "127.0.0.1:4096:4096"
-    volumes:
-      - ./workspaces/src/repos:/home
-      - ./workspaces/src/secrets:/workspaces/secrets:ro
-      - opencode_data:/root/.local/share/opencode
-    environment:
-      - OPENCODE_SERVER_PASSWORD=${INVOKE_OPENCODE_SERVER_PASSWORD}
-      - OPENCODE_DISABLE_AUTOUPDATE=true
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/4096'"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   workspaces:
     profiles: [workspaces]
     build:
@@ -126,14 +105,11 @@ services:
       - workspaces_ssh_authorized_keys:/etc/ssh/authorized_keys
       - workspaces_state:/workspaces/state
     environment:
-      - OPENCODE_SERVER_PASSWORD=${INVOKE_OPENCODE_SERVER_PASSWORD}
       - WORKSPACES_SUPERVISOR_PASSWORD=${INVOKE_WORKSPACES_SUPERVISOR_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      opencode:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7000/health"]

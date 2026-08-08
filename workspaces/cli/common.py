@@ -25,7 +25,6 @@ from workspaces.cli.setup import ensure_ssh_host_keys
 DEFAULT_HOST = "localhost"
 DEFAULT_SSH_PORT = 2222
 DEFAULT_PROXY_PORT = 7000
-OPENCODE_ATTACH_URL = "http://127.0.0.1:4096"
 REDIS_URL = "redis://redis:6379/0"
 # Workspaces reach management by compose service name, not through the host's published port.
 WORKSPACE_MANAGEMENT_URL = "http://management:8000"
@@ -138,7 +137,6 @@ def render_workspace_secret_env(workspace_module: str, postgres_password: str, a
         f"REDIS_URL={REDIS_URL}",
         f"CELERY_BROKER_URL={REDIS_URL}",
         f"CELERY_RESULT_BACKEND={REDIS_URL}",
-        f"OPENCODE_ATTACH_URL={OPENCODE_ATTACH_URL}",
         "",
     ])
 

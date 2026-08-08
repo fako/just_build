@@ -6,11 +6,6 @@ tika:
   host: "http://tika:9998"
   return_type: "xml"
 
-opencode:
-  server:
-    username: "fako"
-    password: "qwerty"
-
 workspaces:
   supervisor:
     url: "http://workspaces:9001/RPC2"
