@@ -28,7 +28,7 @@ invoke install.environment
 ```
 
 From here on use `activate.sh` instead of activating the venv directly, because it loads `.env` into
-your shell the way docker compose does:
+your shell the way docker compose does. Run it now to load new variable values:
 
 ```bash
 source activate.sh
