@@ -67,6 +67,10 @@ class Runtime(models.Model):
     )
     type = models.CharField(max_length=50)
     name = models.SlugField(max_length=64)
+    # The code this runtime runs: the Python package for Django and Celery, and whatever the
+    # equivalent turns out to be for Node or Laravel. Every runtime has one, which is why it is a
+    # field rather than a key in the type specific configuration below.
+    module = models.CharField(max_length=255, default="web")
     configuration = models.JSONField(default=dict, blank=True)
     # Only runtimes that serve HTTP hold a port, and it is unique across the whole container.
     port = models.PositiveIntegerField(null=True, blank=True, unique=True)
@@ -183,14 +187,20 @@ class SupervisordRuntime(Runtime):
             ),
         ]
 
+    def default_environment(self) -> dict[str, str]:
+        """
+        Variables this runtime type derives for itself.
+
+        Python is still assumed here, as it is in install_commands() below. A Node or Laravel type
+        overrides both rather than inheriting an interpreter it does not use.
+        """
+        return {"PYTHONPATH": self.home_directory}
+
     def environment(self) -> dict[str, str]:
         """Variables for the supervisord environment= line."""
-        settings = self.settings
-        environment = {
-            "DJANGO_SETTINGS_MODULE": f"{self.workspace.django_module}.settings",
-            "PYTHONPATH": self.home_directory,
-        }
-        environment.update(settings.environment)
+        environment = self.default_environment()
+        # Configured extras last, so a workspace can override anything its type derived.
+        environment.update(self.settings.environment)
         return environment
 
     def sync_commands(self) -> list[str]:

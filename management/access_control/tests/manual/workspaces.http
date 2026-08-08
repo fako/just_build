@@ -12,8 +12,7 @@ Content-Type: application/json
 
 {
   "name": "Acme",
-  "module": "acme",
-  "django_module": "web"
+  "module": "acme"
 }
 
 ### List workspaces

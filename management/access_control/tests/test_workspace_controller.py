@@ -15,7 +15,6 @@ def test_create_workspace(control_client):
     assert response.json()["name"] == "Data Growth Django"
     assert response.json()["module"] == "datagrowth_django"
     assert response.json()["slug"] == "datagrowth-django"
-    assert response.json()["django_module"] == "web"
     assert response.json()["setup"] == {}
     assert response.json()["api_key"].startswith("workspace:")
     assert response.json()["ssh"] == {
@@ -56,7 +55,6 @@ def test_list_workspaces(control_client):
             "name": "Alpha",
             "module": "alpha",
             "slug": "alpha",
-            "django_module": "web",
             "setup": {},
             "ssh": {
                 "alias": None,
@@ -72,7 +70,6 @@ def test_list_workspaces(control_client):
             "name": "Zulu",
             "module": "zulu",
             "slug": "zulu",
-            "django_module": "web",
             "setup": {},
             "ssh": {
                 "alias": None,
@@ -98,7 +95,6 @@ def test_get_workspace(control_client):
         "name": "Acme",
         "module": "acme",
         "slug": "acme",
-        "django_module": "web",
         "setup": {},
         "ssh": {
             "alias": None,
@@ -161,7 +157,6 @@ def test_patch_workspace_setup_and_ssh_metadata(control_client):
     )
 
     assert response.status_code == 200
-    assert response.json()["django_module"] == "web"
     assert response.json()["setup"] == {
         "workspace_directory": "2026-03-25T10:00:00Z",
         "ssh_access": "2026-03-25T11:00:00Z",

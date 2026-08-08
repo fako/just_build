@@ -39,6 +39,7 @@ class RuntimeSchema(Schema):
     workspace_module: str
     type: str
     name: str
+    module: str
     program_name: str
     configuration: dict
     port: int | None
@@ -55,12 +56,15 @@ class RuntimeCreateSchema(Schema):
     workspace_module: str
     type: str
     name: str
+    # The code the runtime runs, which is whatever workspaces.scaffold was told to create.
+    module: str = "web"
     configuration: dict = {}
     # Left out for HTTP runtimes so management allocates the next free one.
     port: int | None = None
 
 
 class RuntimePatchSchema(Schema):
+    module: str | None = None
     configuration: dict | None = None
     port: int | None = None
 
@@ -152,7 +156,8 @@ def create_runtime(request: HttpRequest, data: RuntimeCreateSchema) -> tuple[int
         port = Runtime.allocate_port()
 
     runtime = runtime_class(
-        workspace=workspace, type=data.type, name=data.name, configuration=data.configuration, port=port,
+        workspace=workspace, type=data.type, name=data.name, module=data.module,
+        configuration=data.configuration, port=port,
     )
     validate_runtime(runtime)
     try:
@@ -218,13 +223,15 @@ def get_runtime(request: HttpRequest, runtime_id: UUID) -> Runtime:
 def patch_runtime(request: HttpRequest, runtime_id: UUID, data: RuntimePatchSchema) -> Runtime:
     runtime = get_runtime_or_404(request, runtime_id)
 
+    if data.module is not None:
+        runtime.module = data.module
     if data.configuration is not None:
         runtime.configuration = data.configuration
     if data.port is not None:
         runtime.port = data.port
 
     validate_runtime(runtime)
-    runtime.save(update_fields=["configuration", "port", "modified_at"])
+    runtime.save(update_fields=["module", "configuration", "port", "modified_at"])
     return runtime
 
 

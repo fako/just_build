@@ -2,9 +2,9 @@
 Per-type configuration schemas.
 
 The Runtime table stores configuration as JSON, so these schemas are what keep a malformed payload
-from becoming a broken supervisord file. Fields that default to something derived from the workspace
-are optional here and resolved on the runtime class, which is the only place that knows the
-workspace.
+from becoming a broken supervisord file. What every runtime has regardless of type is a field on
+Runtime instead; this is only what differs per type. Values derived from something the schema cannot
+see stay optional here and resolve on the runtime class.
 """
 from __future__ import annotations
 
@@ -29,15 +29,11 @@ class HttpConfiguration(SupervisordConfiguration):
 
 
 class DjangoConfiguration(HttpConfiguration):
-    # Defaults to the workspace's own django_module.
-    django_module: str | None = None
-    # Defaults to "<django_module>.asgi".
+    # Defaults to "<runtime module>.asgi".
     asgi_module: str | None = None
 
 
 class CeleryConfiguration(SupervisordConfiguration):
-    # Defaults to the workspace's own django_module.
-    app: str | None = None
     queues: list[str] = Field(default_factory=list)
     concurrency: int = Field(default=2, ge=1, le=64)
     loglevel: str = "INFO"

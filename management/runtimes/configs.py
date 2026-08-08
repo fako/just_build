@@ -41,13 +41,17 @@ def render_supervisord_environment(environment: dict[str, str]) -> str:
 
     Values are quoted and percent signs doubled, because supervisord expands %(...)s itself and
     would otherwise choke on a literal one.
+
+    Sorted, so the rendered file depends on what the variables are rather than on the order the
+    type happened to build them in. The reconciler compares content, and rewriting every config
+    because a mixin moved would be noise.
     """
     if not environment:
         return ""
 
     entries = [
         '{key}="{value}"'.format(key=key, value=value.replace("%", "%%"))
-        for key, value in environment.items()
+        for key, value in sorted(environment.items())
     ]
     return "\n    " + ",\n    ".join(entries)
 

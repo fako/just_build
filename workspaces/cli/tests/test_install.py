@@ -23,7 +23,6 @@ def workspace_record(setup: dict[str, str] | None = None) -> WorkspaceRecord:
         name="Demo Workspace",
         module="demo",
         slug="demo",
-        django_module="web",
         setup=setup if setup is not None else {
             "workspace_created": "now",
             "home_created": "now",

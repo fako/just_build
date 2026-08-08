@@ -34,7 +34,6 @@ def workspace_record() -> WorkspaceRecord:
         name="Demo Workspace",
         module="demo",
         slug="demo",
-        django_module="web",
         setup={},
         ssh=WorkspaceRecord.SSHConfig(),
     )

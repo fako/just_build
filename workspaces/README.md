@@ -181,7 +181,7 @@ invoke runtimes.enable --workspace-module=my_workspace --name=web
 The commands do the following:
 - `workspaces.create` creates the management workspace and its API key, the Linux user, home and log
   directories, secrets, SSH access, the workspace's own git keypair, and refreshes `workspaces/ssh/config`
-- `workspaces.scaffold` connects over SSH as the workspace user, runs `django-admin startproject <django_module> .`,
+- `workspaces.scaffold` connects over SSH as the workspace user, runs `django-admin startproject <runtime-module> .`,
   resolves workspace templates, and by default initializes git and creates the initial commit
 - `workspaces.clone-repo` is the alternative to scaffolding: it brings an existing repository into the same
   home directory, using the workspace's own key
@@ -345,7 +345,7 @@ For a new project, scaffold it over SSH as the project user:
 invoke workspaces.scaffold --workspace-module=my_workspace
 ```
 
-This command runs `django-admin startproject <django_module> .` and applies workspace templates. By default it also
+This command runs `django-admin startproject <runtime-module> .` and applies workspace templates. By default it also
 initializes git, sets local commit identity, and creates the initial commit; pass `--no-git` to skip all git actions.
 
 For an existing project, clone it instead:
@@ -382,6 +382,13 @@ invoke runtimes.enable --workspace-module=my_workspace --name=web
 invoke runtimes.enable --workspace-module=my_workspace --name=worker
 ```
 
+Every runtime has a `module`: the code it runs. For Django that is the package holding `settings`
+and `asgi`, for Celery the package holding the Celery app, and it is the same name
+`workspaces.scaffold --runtime-module` created. It defaults to `web` on both sides, so the common
+case needs neither flag. Because it belongs to the runtime rather than to the workspace, one
+workspace can run two projects, and a runtime type that has no Django in it does not inherit
+`DJANGO_SETTINGS_MODULE` from anywhere.
+
 `runtimes.add` allocates the port for HTTP runtimes, so nothing has to be tracked by hand.
 `runtimes.install` builds the workspace virtualenv and runs whatever else the type needs; management
 answers 409 to enabling a runtime that has not been installed. `runtimes.enable` writes the config,
@@ -399,7 +406,7 @@ Each type renders its own supervisord program and, if it serves HTTP, its own ng
 
 | Type | Command | Port | nginx block |
 | --- | --- | --- | --- |
-| `django` | uvicorn against `<django_module>.asgi` | allocated | yes |
+| `django` | uvicorn against `<module>.asgi` | allocated | yes |
 | `celery` | `celery --app <module> worker` | none | no |
 
 Configuration is validated against a schema per type, so a typo is rejected rather than written into

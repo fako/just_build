@@ -13,7 +13,8 @@ Content-Type: application/json
 {
   "workspace_module": "magic_match",
   "type": "django",
-  "name": "web"
+  "name": "web",
+  "module": "web"
 }
 
 ### Add a Celery runtime, which takes no port
@@ -25,6 +26,7 @@ Content-Type: application/json
   "workspace_module": "magic_match",
   "type": "celery",
   "name": "worker",
+  "module": "web",
   "configuration": {"queues": ["default"], "concurrency": 4}
 }
 

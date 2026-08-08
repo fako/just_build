@@ -26,16 +26,16 @@ DEFAULT_TEMPLATES = ("default",)
 TEMPLATE_ENV = Environment(autoescape=False, keep_trailing_newline=True, undefined=StrictUndefined)
 
 
-def ensure_django_project(conn, repo_dir: str, django_module: str) -> bool:
+def ensure_django_project(conn, repo_dir: str, runtime_module: str) -> bool:
     result = conn.run(
-        f"test -f {quote(repo_dir)}/manage.py -o -d {quote(repo_dir)}/{quote(django_module)}",
+        f"test -f {quote(repo_dir)}/manage.py -o -d {quote(repo_dir)}/{quote(runtime_module)}",
         hide=True,
         warn=True,
     )
     if result.ok:
         return False
 
-    conn.run(f"cd {quote(repo_dir)} && django-admin startproject {quote(django_module)} .", echo=True)
+    conn.run(f"cd {quote(repo_dir)} && django-admin startproject {quote(runtime_module)} .", echo=True)
     return True
 
 
@@ -87,20 +87,28 @@ def template_output_path(relative_path: Path) -> Path:
     return relative_path.with_name(output_name)
 
 
-def template_context(workspace: WorkspaceRecord) -> dict[str, object]:
+def template_context(workspace: WorkspaceRecord, runtime_module: str) -> dict[str, object]:
+    """
+    What a template can reach.
+
+    `runtime_module` is the Python package this scaffold creates, and the same value a runtime is
+    later added with. It is passed as a plain variable rather than through a runtime object, because
+    scaffolding happens before any runtime exists.
+    """
     context: dict[str, object] = workspace.model_dump()
     context["workspace"] = workspace
+    context["runtime_module"] = runtime_module
     return context
 
 
-def render_template_file(local_path: Path, workspace: WorkspaceRecord) -> str:
+def render_template_file(local_path: Path, workspace: WorkspaceRecord, runtime_module: str) -> str:
     template = TEMPLATE_ENV.from_string(local_path.read_text(encoding="utf-8"))
-    return template.render(template_context(workspace))
+    return template.render(template_context(workspace, runtime_module))
 
 
 def put_rendered_template_file(conn, repo_dir: str, local_path: Path, remote_path: Path,
-                               workspace: WorkspaceRecord) -> None:
-    rendered = render_template_file(local_path, workspace)
+                               workspace: WorkspaceRecord, runtime_module: str) -> None:
+    rendered = render_template_file(local_path, workspace, runtime_module)
     temp_path: Path | None = None
     try:
         with NamedTemporaryFile("w", encoding="utf-8", delete=False) as temp_file:
@@ -115,7 +123,8 @@ def put_rendered_template_file(conn, repo_dir: str, local_path: Path, remote_pat
             temp_path.unlink(missing_ok=True)
 
 
-def copy_template_files(conn, repo_dir: str, template_name: str, workspace: WorkspaceRecord) -> None:
+def copy_template_files(conn, repo_dir: str, template_name: str, workspace: WorkspaceRecord,
+                        runtime_module: str) -> None:
     source_dir = template_dir(template_name)
 
     for local_path in sorted(source_dir.rglob("*")):
@@ -132,15 +141,15 @@ def copy_template_files(conn, repo_dir: str, template_name: str, workspace: Work
         if remote_path == relative_path:
             conn.put(str(local_path), remote=remote_template_path(repo_dir, remote_path))
         else:
-            put_rendered_template_file(conn, repo_dir, local_path, remote_path, workspace)
+            put_rendered_template_file(conn, repo_dir, local_path, remote_path, workspace, runtime_module)
 
 
 def copy_workspace_templates(conn, repo_dir: str, templates: list[str] | tuple[str, ...] | str | None,
-                             workspace: WorkspaceRecord) -> tuple[str, ...]:
+                             workspace: WorkspaceRecord, runtime_module: str) -> tuple[str, ...]:
     template_names = normalize_template_names(templates)
     for template_name in template_names:
         print(f"Applying workspace template: {template_name}")
-        copy_template_files(conn, repo_dir, template_name, workspace)
+        copy_template_files(conn, repo_dir, template_name, workspace, runtime_module)
 
     return template_names
 
@@ -148,11 +157,13 @@ def copy_workspace_templates(conn, repo_dir: str, templates: list[str] | tuple[s
 @task(
     help={
         "workspace_module": "Existing workspace module created by workspaces.create",
+        "runtime_module": "Python package the project lives in, and the module runtimes will run. Defaults to web.",
         "templates": "Comma-separated template names to layer in order, defaults to default.",
         "git": "Initialize a git repository and create the initial commit (default: enabled).",
     },
 )
-def scaffold(ctx, workspace_module: str, templates: str = "default", git: bool = True):
+def scaffold(ctx, workspace_module: str, runtime_module: str = "web", templates: str = "default",
+             git: bool = True):
     """Scaffold a new Django project and the workspace templates over SSH as the workspace user."""
     workspace = get_workspace(workspace_module)
     require_setup_steps(workspace, ("workspace_created", "home_created", "secrets_created", "ssh_access"))
@@ -171,11 +182,11 @@ def scaffold(ctx, workspace_module: str, templates: str = "default", git: bool =
         ensure_git_repo(conn, repo_dir, workspace.name, workspace.module)
         log_setup_step(workspace.module, "git_initialized")
 
-    django_initialized = ensure_django_project(conn, repo_dir, workspace.django_module)
+    django_initialized = ensure_django_project(conn, repo_dir, runtime_module)
     if django_initialized:
         log_setup_step(workspace.module, "django_initialized")
 
-    template_names = copy_workspace_templates(conn, repo_dir, templates, workspace)
+    template_names = copy_workspace_templates(conn, repo_dir, templates, workspace, runtime_module)
     log_setup_step(workspace.module, "templates_resolved")
 
     if git:
@@ -187,4 +198,5 @@ def scaffold(ctx, workspace_module: str, templates: str = "default", git: bool =
     print(f"Scaffolded workspace {workspace.name} ({workspace.module}) over SSH.")
     print(f"Templates resolved: {', '.join(template_names)}")
     print("Next step:")
-    print(f"  invoke runtimes.add --workspace-module={workspace.module} --type=django --name=web")
+    print(f"  invoke runtimes.add --workspace-module={workspace.module} --type=django --name=web"
+          f" --module={runtime_module}")

@@ -26,7 +26,6 @@ class WorkspaceSchema(Schema):
     name: str
     module: str
     slug: str
-    django_module: str
     setup: dict[str, str]
     ssh: WorkspaceSSHSchema
     git_public_key: str
@@ -35,7 +34,7 @@ class WorkspaceSchema(Schema):
 class WorkspaceCreateSchema(ModelSchema):
     class Meta:
         model = Workspace
-        fields = ["name", "module", "django_module"]
+        fields = ["name", "module"]
 
 
 class WorkspaceSSHPatchSchema(Schema):

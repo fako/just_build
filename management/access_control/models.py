@@ -25,7 +25,6 @@ class Workspace(models.Model):
     name = models.CharField(max_length=255)
     module = models.CharField(max_length=255, unique=True)
     slug = models.SlugField(max_length=255, unique=True, editable=False)
-    django_module = models.CharField(max_length=255, default="web")
     setup = models.JSONField(default=dict, blank=True)
     ssh = models.JSONField(default=dict, blank=True)
     # The public half of the keypair the workspace itself owns, generated inside its home by

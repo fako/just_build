@@ -49,11 +49,10 @@ def prompt_key_password(key_password: str | None) -> str:
     help={
         "name": "Human-friendly workspace name",
         "module": "Unique workspace module and Linux username",
-        "django_module": "Django project module name, defaults to web",
         "key_password": "Password for the workspace SSH key. Prompted for when left out.",
     }
 )
-def create(ctx, name: str, module: str, django_module: str = "web", key_password: str | None = None):
+def create(ctx, name: str, module: str, key_password: str | None = None):
     """Create a workspace, its Linux account, secrets, SSH access and its own git SSH key."""
     assert_workspace_state_clean(module)
     ensure_workspaces_container(ctx)
@@ -62,7 +61,7 @@ def create(ctx, name: str, module: str, django_module: str = "web", key_password
     # workspace that was never going to exist.
     key_password = prompt_key_password(key_password)
 
-    workspace = create_workspace(name=name, module=module, django_module=django_module)
+    workspace = create_workspace(name=name, module=module)
     if not workspace.api_key:
         raise RuntimeError(f"Management did not return an API key for workspace '{workspace.module}'.")
     log_setup_step(workspace.module, "workspace_created")

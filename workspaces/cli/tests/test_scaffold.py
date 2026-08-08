@@ -40,7 +40,6 @@ def workspace_record(module: str = "demo", *, slug: str | None = None,
         name="Demo Workspace",
         module=module,
         slug=slug or module.replace("_", "-"),
-        django_module="web",
         setup=setup or {},
         ssh=WorkspaceRecord.SSHConfig(),
     )
@@ -127,7 +126,7 @@ def test_copy_template_files_traverses_directories_and_renders_templates(tmp_pat
     source_dir = tmp_path / "default"
     (source_dir / "web" / "empty").mkdir(parents=True)
     (source_dir / "web" / "settings.tpl.py").write_text(
-        'HOST = "{{ workspace.slug }}.localhost"\nNAME = "{{ module }}"\n',
+        'HOST = "{{ workspace.slug }}.localhost"\nNAME = "{{ module }}"\nPACKAGE = "{{ runtime_module }}"\n',
         encoding="utf-8",
     )
     (source_dir / "README.md").write_text("raw\n", encoding="utf-8")
@@ -136,10 +135,12 @@ def test_copy_template_files_traverses_directories_and_renders_templates(tmp_pat
     workspace = workspace_record("demo_module")
     conn = RecordingConnection()
 
-    scaffold_cli.copy_template_files(conn, "/home/demo_module", "default", workspace)
+    scaffold_cli.copy_template_files(conn, "/home/demo_module", "default", workspace, "portal")
 
+    # runtime_module comes from the scaffold argument rather than from the workspace, because no
+    # runtime exists yet to ask.
     assert conn.uploads["/home/demo_module/web/settings.py"] == (
-        'HOST = "demo-module.localhost"\nNAME = "demo_module"\n'
+        'HOST = "demo-module.localhost"\nNAME = "demo_module"\nPACKAGE = "portal"\n'
     )
     assert conn.uploads["/home/demo_module/README.md"] == "raw\n"
     assert "test -d /home/demo_module/web || mkdir -p /home/demo_module/web" in conn.commands
@@ -149,7 +150,7 @@ def test_copy_template_files_traverses_directories_and_renders_templates(tmp_pat
 def test_default_opencode_template_uses_workspace_reference_without_server_credentials() -> None:
     template_path = scaffold_cli.TEMPLATES_DIR / "default" / "opencode.tpl.jsonc"
 
-    rendered = scaffold_cli.render_template_file(template_path, workspace_record())
+    rendered = scaffold_cli.render_template_file(template_path, workspace_record(), "web")
 
     assert '"demo"' in rendered
     assert '"path": "/home/demo"' in rendered

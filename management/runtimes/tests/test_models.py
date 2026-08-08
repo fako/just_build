@@ -8,7 +8,7 @@ from runtimes.models.base import UnknownRuntimeType, runtime_class_for
 
 @pytest.fixture
 def workspace(db) -> Workspace:
-    return Workspace.objects.create(name="Magic Match", module="magic_match", django_module="web")
+    return Workspace.objects.create(name="Magic Match", module="magic_match")
 
 
 @pytest.fixture
@@ -109,15 +109,54 @@ def test_django_command_renders_uvicorn(django_runtime):
 
 
 @pytest.mark.django_db
-def test_django_configuration_overrides_the_workspace_module(workspace):
+def test_module_drives_the_django_settings_and_asgi_modules(workspace):
     runtime = Runtime.objects.create(
-        workspace=workspace, type="django", name="web", port=8001,
-        configuration={"django_module": "portal", "workers": 4},
+        workspace=workspace, type="django", name="web", port=8001, module="portal",
+        configuration={"workers": 4},
     ).specialize()
 
     assert runtime.asgi_module == "portal.asgi"
     assert "--workers 4" in runtime.command
     assert runtime.environment()["DJANGO_SETTINGS_MODULE"] == "portal.settings"
+
+
+@pytest.mark.django_db
+def test_module_drives_the_celery_app(workspace):
+    runtime = Runtime.objects.create(
+        workspace=workspace, type="celery", name="worker", module="portal",
+    ).specialize()
+
+    assert "--app portal worker" in runtime.command
+    assert runtime.environment()["DJANGO_SETTINGS_MODULE"] == "portal.settings"
+
+
+@pytest.mark.django_db
+def test_module_defaults_to_web(workspace, django_runtime):
+    assert django_runtime.module == "web"
+
+
+@pytest.mark.django_db
+def test_two_runtimes_in_one_workspace_can_run_different_modules(workspace):
+    web = Runtime.objects.create(
+        workspace=workspace, type="django", name="web", port=8001, module="portal",
+    ).specialize()
+    worker = Runtime.objects.create(
+        workspace=workspace, type="celery", name="worker", module="tasks",
+    ).specialize()
+
+    # The module belongs to the runtime, so one workspace is not limited to one project.
+    assert web.environment()["DJANGO_SETTINGS_MODULE"] == "portal.settings"
+    assert worker.environment()["DJANGO_SETTINGS_MODULE"] == "tasks.settings"
+
+
+@pytest.mark.django_db
+def test_asgi_module_can_still_be_overridden(workspace):
+    runtime = Runtime.objects.create(
+        workspace=workspace, type="django", name="web", port=8001, module="portal",
+        configuration={"asgi_module": "portal.custom_asgi"},
+    ).specialize()
+
+    assert runtime.asgi_module == "portal.custom_asgi"
 
 
 @pytest.mark.django_db
@@ -154,6 +193,32 @@ def test_environment_carries_the_workspace_python_path(django_runtime):
         "DJANGO_SETTINGS_MODULE": "web.settings",
         "PYTHONPATH": "/home/magic_match",
     }
+
+
+@pytest.mark.django_db
+def test_django_settings_module_is_not_something_every_runtime_type_inherits(workspace):
+    """
+    The base type stays out of Django.
+
+    Both current types boot a Django project so both get the variable, but they get it from a mixin
+    rather than from SupervisordRuntime, which is what keeps a future Node or Laravel runtime from
+    inheriting a setting it has no use for.
+    """
+    runtime = Runtime.objects.create(workspace=workspace, type="celery", name="worker")
+    supervisord = SupervisordRuntime.objects.get(pk=runtime.pk)
+
+    assert "DJANGO_SETTINGS_MODULE" not in supervisord.default_environment()
+    assert "DJANGO_SETTINGS_MODULE" in runtime.specialize().default_environment()
+
+
+@pytest.mark.django_db
+def test_configured_environment_wins_over_what_the_type_derived(workspace):
+    runtime = Runtime.objects.create(
+        workspace=workspace, type="celery", name="worker",
+        configuration={"environment": {"DJANGO_SETTINGS_MODULE": "web.settings_local"}},
+    ).specialize()
+
+    assert runtime.environment()["DJANGO_SETTINGS_MODULE"] == "web.settings_local"
 
 
 @pytest.mark.django_db

@@ -1,15 +1,15 @@
 """
 The Celery application for this workspace.
 
-A CeleryRuntime runs this with `celery --app {{ workspace.django_module }} worker`, which imports
-{{ workspace.django_module }}/__init__.py and picks up the app exported there.
+A CeleryRuntime runs this with `celery --app {{ runtime_module }} worker`, which imports
+{{ runtime_module }}/__init__.py and picks up the app exported there.
 """
 import os
 
 from celery import Celery
 
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "{{ workspace.django_module }}.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "{{ runtime_module }}.settings")
 
 app = Celery("{{ workspace.module }}")
 

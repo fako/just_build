@@ -3,11 +3,12 @@ from __future__ import annotations
 from django.core.exceptions import ValidationError
 
 from runtimes.models.base import SupervisordRuntime, register_runtime
+from runtimes.models.django_project import DjangoProjectRuntime
 from runtimes.schemas import CeleryConfiguration
 
 
 @register_runtime("celery")
-class CeleryRuntime(SupervisordRuntime):
+class CeleryRuntime(DjangoProjectRuntime, SupervisordRuntime):
     """A Celery worker. Serves no HTTP, so it holds no port and renders no nginx config."""
 
     configuration_schema: type[CeleryConfiguration] = CeleryConfiguration
@@ -16,14 +17,10 @@ class CeleryRuntime(SupervisordRuntime):
         proxy = True
 
     @property
-    def app(self) -> str:
-        return self.settings.app or self.workspace.django_module
-
-    @property
     def command(self) -> str:
         settings = self.settings
         command = (
-            f"{self.python_path} -m celery --app {self.app} worker"
+            f"{self.python_path} -m celery --app {self.module} worker"
             f" --loglevel {settings.loglevel} --concurrency {settings.concurrency}"
         )
         if settings.queues:

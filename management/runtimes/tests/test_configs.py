@@ -7,7 +7,7 @@ from runtimes.models import Runtime
 
 @pytest.fixture
 def workspace(db) -> Workspace:
-    return Workspace.objects.create(name="Magic Match", module="magic_match", django_module="web")
+    return Workspace.objects.create(name="Magic Match", module="magic_match")
 
 
 @pytest.fixture

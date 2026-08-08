@@ -8,6 +8,9 @@
 
 
 To be speced out further before implementation:
+* Scaffold templates hardcode a literal `web/` directory, so `workspaces.scaffold --runtime-module=portal`
+  creates portal/ with django-admin but writes the template's settings into web/. Either render path
+  segments through Jinja too, or drop the argument and fix the package name at web.
 * Generate passwords for toplevel .env.example instead of a simple cp in INSTALLATION.md
 * Redis database index allocation per workspace. Queues and cache keys are namespaced by module for now,
   which is enough for isolation but shares one database.

@@ -14,6 +14,7 @@ class RuntimeRecord(BaseModel):
     workspace_module: str
     type: str
     name: str
+    module: str
     program_name: str
     configuration: dict
     port: int | None
@@ -93,12 +94,13 @@ def get_runtime(runtime_id: str) -> RuntimeRecord:
     return RuntimeRecord.model_validate(response.json())
 
 
-def create_runtime(workspace_module: str, runtime_type: str, name: str,
+def create_runtime(workspace_module: str, runtime_type: str, name: str, module: str = "web",
                    configuration: dict | None = None, port: int | None = None) -> RuntimeRecord:
     payload = {
         "workspace_module": workspace_module,
         "type": runtime_type,
         "name": name,
+        "module": module,
         "configuration": configuration or {},
     }
     if port is not None:
@@ -107,8 +109,11 @@ def create_runtime(workspace_module: str, runtime_type: str, name: str,
     return RuntimeRecord.model_validate(response.json())
 
 
-def patch_runtime(runtime_id: str, configuration: dict | None = None, port: int | None = None) -> RuntimeRecord:
+def patch_runtime(runtime_id: str, module: str | None = None, configuration: dict | None = None,
+                  port: int | None = None) -> RuntimeRecord:
     payload: dict[str, object] = {}
+    if module is not None:
+        payload["module"] = module
     if configuration is not None:
         payload["configuration"] = configuration
     if port is not None:

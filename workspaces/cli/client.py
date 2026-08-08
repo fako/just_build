@@ -27,7 +27,6 @@ class WorkspaceRecord(BaseModel):
     name: str
     module: str
     slug: str
-    django_module: str
     setup: dict[str, str]
     git_public_key: str = ""
     # Only present on the response that creates the workspace.
@@ -47,11 +46,11 @@ def _workspace_url(workspace_module: str) -> str:
     return f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/workspaces/{workspace_module}/"
 
 
-def create_workspace(name: str, module: str, django_module: str = "web") -> WorkspaceRecord:
+def create_workspace(name: str, module: str) -> WorkspaceRecord:
     try:
         response = requests.post(
             f"{DEFAULT_MANAGEMENT_URL.rstrip('/')}/api/v1/workspaces/",
-            json={"name": name, "module": module, "django_module": django_module},
+            json={"name": name, "module": module},
             headers=control_headers(),
             timeout=10,
         )

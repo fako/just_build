@@ -16,4 +16,4 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["{{ workspace.django_module }}*"]
+include = ["{{ runtime_module }}*"]

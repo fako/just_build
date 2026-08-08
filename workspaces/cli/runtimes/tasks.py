@@ -46,19 +46,21 @@ def list_runtimes(ctx: Context, workspace_module: str | None = None):
         "workspace_module": "Workspace that will own the runtime",
         "type": "Runtime type, for example django or celery",
         "name": "Runtime name, unique within the workspace, for example web or worker",
+        "module": "The code the runtime runs, matching what workspaces.scaffold created. Defaults to web.",
         "port": "Fixed port for HTTP runtimes. Left out, management allocates the next free one.",
         "configuration": 'Type specific configuration as JSON, for example \'{"concurrency": 4}\'',
     },
 )
-def add(ctx: Context, workspace_module: str, type: str, name: str, port: int | None = None,  # noqa: A002
-        configuration: str | None = None):
+def add(ctx: Context, workspace_module: str, type: str, name: str, module: str = "web",  # noqa: A002
+        port: int | None = None, configuration: str | None = None):
     """Add a runtime to a workspace. Enable it to put it on disk."""
     parsed = json.loads(configuration) if configuration else None
-    runtime = client.create_runtime(workspace_module, type, name, configuration=parsed, port=port)
+    runtime = client.create_runtime(workspace_module, type, name, module=module, configuration=parsed, port=port)
 
     print("")
     print(f"Added {runtime.type} runtime '{runtime.name}' to workspace {workspace_module}.")
     print(f"Supervisord program: {runtime.program_name}")
+    print(f"Module: {runtime.module}")
     if runtime.port:
         print(f"Port: {runtime.port}")
     print(f"Log file: {runtime.log_path}")
@@ -69,11 +71,12 @@ def add(ctx: Context, workspace_module: str, type: str, name: str, port: int | N
 @task(help={
     "workspace_module": "Workspace that owns the runtime",
     "name": "Runtime name",
+    "module": "Change the code the runtime runs",
     "configuration": 'Type specific configuration as JSON, for example \'{"concurrency": 4}\'',
     "port": "Change the port of an HTTP runtime",
 })
-def configure(ctx: Context, workspace_module: str, name: str, configuration: str | None = None,
-              port: int | None = None):
+def configure(ctx: Context, workspace_module: str, name: str, module: str | None = None,
+              configuration: str | None = None, port: int | None = None):
     """Replace a runtime's configuration. Apply afterwards to put the change on disk."""
     runtime = resolve_runtime(workspace_module, name)
 
@@ -86,12 +89,12 @@ def configure(ctx: Context, workspace_module: str, name: str, configuration: str
         if not isinstance(parsed, dict):
             raise RuntimeError("Configuration must be a JSON object.")
 
-    updated = client.patch_runtime(runtime.id, configuration=parsed, port=port)
+    updated = client.patch_runtime(runtime.id, module=module, configuration=parsed, port=port)
     if updated.is_enabled:
         apply_configs(ctx)
 
     print("")
-    print(f"Configured {updated.program_name}: {json.dumps(updated.configuration)}")
+    print(f"Configured {updated.program_name}: module={updated.module} {json.dumps(updated.configuration)}")
 
 
 @task(help={

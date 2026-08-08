@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 
 from runtimes.configs import ConfigFile, nginx_config_path, render_config
 from runtimes.models.base import SupervisordRuntime, register_runtime
+from runtimes.models.django_project import DjangoProjectRuntime
 from runtimes.schemas import DjangoConfiguration, HttpConfiguration
 
 
@@ -44,7 +45,7 @@ class HttpRuntime(SupervisordRuntime):
 
 
 @register_runtime("django")
-class DjangoRuntime(HttpRuntime):
+class DjangoRuntime(DjangoProjectRuntime, HttpRuntime):
 
     configuration_schema: type[DjangoConfiguration] = DjangoConfiguration
 
@@ -52,12 +53,8 @@ class DjangoRuntime(HttpRuntime):
         proxy = True
 
     @property
-    def django_module(self) -> str:
-        return self.settings.django_module or self.workspace.django_module
-
-    @property
     def asgi_module(self) -> str:
-        return self.settings.asgi_module or f"{self.django_module}.asgi"
+        return self.settings.asgi_module or f"{self.module}.asgi"
 
     @property
     def command(self) -> str:
@@ -67,11 +64,6 @@ class DjangoRuntime(HttpRuntime):
             f" --host 127.0.0.1 --port {self.port} --workers {settings.workers}"
             " --loop uvloop --http httptools"
         )
-
-    def environment(self) -> dict[str, str]:
-        environment = super().environment()
-        environment["DJANGO_SETTINGS_MODULE"] = f"{self.django_module}.settings"
-        return environment
 
     def sync_commands(self) -> list[str]:
         # Static files are served by nginx straight from staticfiles/, so they have to be collected
