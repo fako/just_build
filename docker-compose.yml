@@ -1,9 +1,43 @@
 volumes:
   postgres:
+  n8n:
   workspaces_homes:
   workspaces_secrets:
   workspaces_ssh_authorized_keys:
   workspaces_state:
+
+
+x-n8n-core: &n8n_core
+  image: n8nio/n8n:2.18.5
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  volumes:
+    - n8n:/home/node/.n8n
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  environment:
+    # Database Configuration
+    - DB_TYPE=postgresdb
+    - DB_POSTGRESDB_HOST=postgres
+    - DB_POSTGRESDB_PORT=5432
+    - DB_POSTGRESDB_DATABASE=${INVOKE_N8N_DATABASE_NAME}
+    - DB_POSTGRESDB_USER=${INVOKE_N8N_DATABASE_USER}
+    - DB_POSTGRESDB_PASSWORD=${INVOKE_N8N_DATABASE_PASSWORD}
+    # N8N Specific Settings
+    - EXECUTIONS_MODE=queue
+    - QUEUE_BULL_REDIS_HOST=redis
+    - QUEUE_HEALTH_CHECK_ACTIVE=true
+    - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
+    - GENERIC_TIMEZONE=Europe/Amsterdam
+    - WEBHOOK_URL=http://${INVOKE_N8N_HOST}/
+    - N8N_EDITOR_BASE_URL=http://${INVOKE_N8N_HOST}/
+    - N8N_PROTOCOL=http
+    - N8N_ENCRYPTION_KEY=${INVOKE_N8N_ENCRYPTION_KEY}
+    - N8N_HOST=${INVOKE_N8N_HOST}
+    - N8N_SECURE_COOKIE=false
 
 
 services:
@@ -50,6 +84,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  n8n:
+    <<: *n8n_core
+    profiles: [services, workspaces]
+    ports:
+      - "127.0.0.1:5678:5678"
+
+  n8n-worker:
+    <<: *n8n_core
+    profiles: [services, workspaces]
+    command: worker
+    depends_on:
+      - n8n
 
   management:
     profiles: [control, workspaces]
