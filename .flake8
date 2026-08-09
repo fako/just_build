@@ -10,4 +10,9 @@ exclude =
     __pycache__,
     .venv,
     venv,
-    */migrations/*
+    */migrations/*,
+    # Agent-owned workspace repositories and vendored template payloads. Not ours to lint.
+    workspaces/src,
+    workspaces/templates/datagrowth,
+    # Jinja sources, which only become valid Python once rendered into a workspace.
+    *.tpl.py

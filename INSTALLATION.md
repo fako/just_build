@@ -13,21 +13,37 @@ Make sure they are installed on your system before installing the project.
 
 ## Setup
 
-First copy the `.env.example` file to `.env` and update the variable values to fit your system.
-For a start the default values will do.
-
 To install the basic environment and tooling you'll need to setup a local environment on a host machine with:
 
 ```bash
 python3 -m venv venv --copies --upgrade-deps
-source activate.sh
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-To let OpenSSH and Cursor Remote SSH see generated workspace entries, add this once to your user SSH config:
+Now generate your `.env` from `.env.example`:
+
+```bash
+invoke install.environment
+```
+
+From here on use `activate.sh` instead of activating the venv directly, because it loads `.env` into
+your shell the way docker compose does. Run it now to load new variable values:
+
+```bash
+source activate.sh
+```
+
+To let OpenSSH and VSCode Remote SSH see generated workspace entries, add this once to your user SSH config:
 
 ```ssh-config
 Include /absolute/path/to/just_build/workspaces/ssh/config
+```
+
+Now you can run the following command to generate the SSH keys that the host will use for container access:
+
+```bash
+invoke install.ssh
 ```
 
 To allow easy CLI communication with the Docker containers of this project you now need to update your `/etc/hosts` to include all container names. This requires your sudo password.
@@ -45,5 +61,5 @@ docker compose up --build -d
 And run the following to setup the management database that stores workspace details.
 
 ```bash
-invoke management.setup-database
+invoke install.management-database
 ```

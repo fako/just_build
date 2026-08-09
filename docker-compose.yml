@@ -1,6 +1,7 @@
 volumes:
   postgres:
-  opencode_data:
+  workspaces_homes:
+  workspaces_secrets:
   workspaces_ssh_authorized_keys:
   workspaces_state:
 
@@ -50,22 +51,38 @@ services:
       timeout: 5s
       retries: 5
 
-  opencode:
-    profiles: [workspaces]
+  management:
+    profiles: [control, workspaces]
     build:
       dockerfile: "Dockerfile"
-      context: ./services/opencode
+      context: ./management
     ports:
-      - "127.0.0.1:4096:4096"
+      - "127.0.0.1:8000:8000"
     volumes:
-      - ./workspaces/src/repos:/home
-      - ./workspaces/src/secrets:/workspaces/secrets:ro
-      - opencode_data:/root/.local/share/opencode
+      - ./invoke.yml:/invoke.yml:ro
     environment:
-      - OPENCODE_SERVER_PASSWORD=${INVOKE_OPENCODE_SERVER_PASSWORD}
-      - OPENCODE_DISABLE_AUTOUPDATE=true
+      - INVOKE_MANAGEMENT_SECURITY_DEBUG=${INVOKE_MANAGEMENT_SECURITY_DEBUG}
+      - INVOKE_MANAGEMENT_SECURITY_SECRET_KEY=${INVOKE_MANAGEMENT_SECURITY_SECRET_KEY}
+      - INVOKE_MANAGEMENT_SECURITY_API_KEY=${INVOKE_MANAGEMENT_SECURITY_API_KEY}
+      - INVOKE_MANAGEMENT_DATABASE_NAME=${INVOKE_MANAGEMENT_DATABASE_NAME}
+      - INVOKE_MANAGEMENT_DATABASE_USER=${INVOKE_MANAGEMENT_DATABASE_USER}
+      - INVOKE_MANAGEMENT_DATABASE_PASSWORD=${INVOKE_MANAGEMENT_DATABASE_PASSWORD}
+      - INVOKE_WORKSPACES_SUPERVISOR_PASSWORD=${INVOKE_WORKSPACES_SUPERVISOR_PASSWORD}
+    develop:
+      watch:
+        - action: sync
+          path: ./management
+          target: /management
+          ignore:
+            - requirements.txt
+            - invoke.yml
+        - action: rebuild
+          path: ./management/requirements.txt
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/4096'"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8000'"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -80,21 +97,26 @@ services:
     ports:
       - "127.0.0.1:7000:7000"
       - "127.0.0.1:2222:22"
+      # Supervisord RPC, on loopback so management can also drive it while running on the host.
+      - "127.0.0.1:9001:9001"
     volumes:
-      - ./workspaces/src/repos:/home
-      - ./workspaces/src/secrets:/workspaces/secrets
+      # Workspace homes and secrets are the workspaces' own files, owned by their container users.
+      # They stay in volumes rather than bind mounts so the repository never collects directories
+      # the host user cannot read, and so a git clean cannot take a workspace with it.
+      - workspaces_homes:/home
+      - workspaces_secrets:/workspaces/secrets
+      # Generated config stays bind mounted: the host CLI is what writes it, from what management
+      # renders, and it is useful to be able to read it without entering the container.
       - ./workspaces/src/supervisor:/etc/supervisor/conf.d
       - ./workspaces/src/nginx:/etc/nginx/conf.d
       - workspaces_ssh_authorized_keys:/etc/ssh/authorized_keys
       - workspaces_state:/workspaces/state
     environment:
-      - OPENCODE_SERVER_PASSWORD=${INVOKE_OPENCODE_SERVER_PASSWORD}
+      - WORKSPACES_SUPERVISOR_PASSWORD=${INVOKE_WORKSPACES_SUPERVISOR_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      opencode:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7000/health"]

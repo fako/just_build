@@ -1,15 +1,14 @@
 import importlib
-from pathlib import Path
 from types import SimpleNamespace
 
-from workspaces.cli.client import WorkspaceRecord
+import pytest
 
 
 common = importlib.import_module("workspaces.cli.common")
 
 
 def test_render_workspace_secret_env_includes_django_and_libpq_settings() -> None:
-    content = common.render_workspace_secret_env("demo", "workspace-password")
+    content = common.render_workspace_secret_env("demo", "workspace-password", "workspace:a-key")
 
     assert "POSTGRES_DB=demo\n" in content
     assert "POSTGRES_USER=demo\n" in content
@@ -17,7 +16,9 @@ def test_render_workspace_secret_env_includes_django_and_libpq_settings() -> Non
     assert "PGDATABASE=demo\n" in content
     assert "PGUSER=demo\n" in content
     assert "PGPASSFILE=/workspaces/secrets/demo/.pgpass\n" in content
-    assert "OPENCODE_ATTACH_URL=http://127.0.0.1:4096\n" in content
+    # The workspace calls the management API with these, from inside the container.
+    assert "MANAGEMENT_URL=http://management:8000\n" in content
+    assert "WORKSPACE_API_KEY=workspace:a-key\n" in content
 
 
 def test_render_workspace_pgpass_uses_generated_postgres_credentials() -> None:
@@ -63,40 +64,8 @@ def test_read_workspace_secret_environment_reads_as_container_root(monkeypatch) 
     }]
 
 
-def test_grant_host_workspace_access_sets_access_and_inherited_acls(monkeypatch) -> None:
-    calls: list[dict[str, object]] = []
-    ctx = object()
-
-    monkeypatch.setattr(
-        common,
-        "docker_exec",
-        lambda received_ctx, script, **kwargs: calls.append({
-            "ctx": received_ctx,
-            "script": script,
-            **kwargs,
-        }),
-    )
-    monkeypatch.setattr(
-        common,
-        "workspace_secret_dir",
-        lambda workspace_module: Path(f"/nonexistent/{workspace_module}"),
-    )
-
-    common.grant_host_workspace_access(ctx, "datagrowth_django", host_uid=1000)
-
-    assert calls == [{
-        "ctx": ctx,
-        "script": (
-            "setfacl -R -m u:1000:rwX /home/datagrowth_django"
-            " && find /home/datagrowth_django -type d -exec setfacl -m d:u:1000:rwX {} +"
-        ),
-        "user": "root",
-    }]
-
-
-def test_reset_workspace_ownership_chowns_home_and_reapplies_host_acl(monkeypatch) -> None:
+def test_reset_workspace_ownership_chowns_home_and_secrets(monkeypatch) -> None:
     calls: list[tuple[object, str, dict[str, object]]] = []
-    grants: list[str] = []
     ctx = object()
 
     monkeypatch.setattr(
@@ -109,15 +78,9 @@ def test_reset_workspace_ownership_chowns_home_and_reapplies_host_acl(monkeypatc
         "docker_exec",
         lambda received_ctx, command, **kwargs: calls.append((received_ctx, command, kwargs)),
     )
-    monkeypatch.setattr(
-        common,
-        "grant_host_workspace_access",
-        lambda received_ctx, workspace_module: grants.append(workspace_module),
-    )
 
     common.reset_workspace_ownership(ctx, "datagrowth_django")
 
-    assert grants == ["datagrowth_django"]
     assert calls == [
         (ctx, "up", {}),
         (
@@ -133,37 +96,130 @@ def test_reset_workspace_ownership_chowns_home_and_reapplies_host_acl(monkeypatc
     ]
 
 
-def test_stage_workspace_configs_uses_module_for_runtime_and_slug_for_domain(tmp_path, monkeypatch) -> None:
-    supervisor_template = tmp_path / "supervisor.template"
-    supervisor_template.write_text("[program:PROJECT_NAME]\ndirectory=/home/PROJECT_NAME\n")
-    nginx_template = tmp_path / "nginx.template"
-    nginx_template.write_text("server_name PROJECT_DOMAIN;\nalias /home/PROJECT_NAME/staticfiles/;\n")
-    staged_supervisor = tmp_path / "supervisor"
-    staged_nginx = tmp_path / "nginx"
+class RecordingContext:
+    """Captures what ctx.run is handed, including the stdin stream write_container_file uses."""
 
-    monkeypatch.setattr(common, "SUPERVISOR_TEMPLATE_PATH", supervisor_template)
-    monkeypatch.setattr(common, "NGINX_TEMPLATE_PATH", nginx_template)
-    monkeypatch.setattr(common, "STAGED_SUPERVISOR_DIR", staged_supervisor)
-    monkeypatch.setattr(common, "STAGED_NGINX_DIR", staged_nginx)
-    monkeypatch.setattr(common, "next_workspace_port", lambda workspace_module: 8001)
+    def __init__(self) -> None:
+        self.runs: list[dict[str, object]] = []
 
-    workspace = WorkspaceRecord(
-        id="workspace-id",
-        name="Data Growth Django",
-        module="datagrowth_django",
-        slug="datagrowth-django",
-        django_module="web",
-        setup={},
-        ssh=WorkspaceRecord.SSHConfig(),
+    def run(self, command: str, **kwargs):
+        in_stream = kwargs.pop("in_stream", None)
+        self.runs.append({
+            "command": command,
+            "stdin": in_stream.getvalue() if in_stream is not None else None,
+            **kwargs,
+        })
+        return SimpleNamespace(ok=True, stdout="")
+
+
+def test_write_container_file_keeps_the_content_out_of_the_command() -> None:
+    ctx = RecordingContext()
+
+    common.write_container_file(ctx, "/workspaces/secrets/demo/.env", "SECRET=hunter2\n", owner="root:demo", mode="640")
+
+    run = ctx.runs[0]
+    assert run["stdin"] == "SECRET=hunter2\n"
+    # The whole point: what gets echoed to the terminal and the shell's argument list holds no secret.
+    assert "hunter2" not in str(run["command"])
+    assert run["command"] == (
+        "docker compose exec -T --user root workspaces sh -lc "
+        "'umask 077 && cat > /workspaces/secrets/demo/.env"
+        " && chown root:demo /workspaces/secrets/demo/.env"
+        " && chmod 640 /workspaces/secrets/demo/.env'"
     )
 
-    supervisor_path, nginx_path = common.stage_workspace_configs(
-        workspace, f"{workspace.slug}.localhost"
+
+def test_ensure_workspace_secret_root_is_traversable_but_not_listable(monkeypatch) -> None:
+    scripts: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        common, "docker_exec", lambda ctx, script, **kwargs: scripts.append((script, kwargs)),
     )
 
-    assert supervisor_path == staged_supervisor / "datagrowth_django.conf"
-    assert "[program:datagrowth_django]" in supervisor_path.read_text()
-    assert "directory=/home/datagrowth_django" in supervisor_path.read_text()
-    assert nginx_path == staged_nginx / "datagrowth_django.conf"
-    assert "server_name datagrowth-django.localhost;" in nginx_path.read_text()
-    assert "alias /home/datagrowth_django/staticfiles/;" in nginx_path.read_text()
+    common.ensure_workspace_secret_root(object())
+
+    assert scripts == [(
+        "mkdir -p /workspaces/secrets && chown root:root /workspaces/secrets && chmod 711 /workspaces/secrets",
+        {"user": "root"},
+    )]
+
+
+def test_ensure_workspace_secret_file_writes_into_the_container(monkeypatch) -> None:
+    scripts: list[str] = []
+    written: list[dict[str, object]] = []
+
+    monkeypatch.setattr(common, "ensure_workspace_secret_root", lambda ctx: None)
+    monkeypatch.setattr(
+        common,
+        "docker_exec",
+        lambda ctx, script, **kwargs: scripts.append(script) or SimpleNamespace(ok=False, stdout=""),
+    )
+    monkeypatch.setattr(
+        common,
+        "write_container_file",
+        lambda ctx, path, content, **kwargs: written.append({"path": path, "content": content, **kwargs}),
+    )
+
+    secret_path = common.ensure_workspace_secret_file(object(), "demo", "workspace:a-key")
+
+    assert secret_path == "/workspaces/secrets/demo/.env"
+    assert scripts == [
+        "test -e /workspaces/secrets/demo/.env -o -e /workspaces/secrets/demo/.pgpass",
+        "mkdir -p /workspaces/secrets/demo && chown root:demo /workspaces/secrets/demo"
+        " && chmod 750 /workspaces/secrets/demo",
+    ]
+    assert [entry["path"] for entry in written] == [
+        "/workspaces/secrets/demo/.env",
+        "/workspaces/secrets/demo/.pgpass",
+    ]
+    assert written[0]["owner"] == "root:demo" and written[0]["mode"] == "640"
+    # Readable by the workspace user alone, because libpq refuses a group-readable pgpass file.
+    assert written[1]["owner"] == "demo:demo" and written[1]["mode"] == "600"
+    assert "WORKSPACE_API_KEY=workspace:a-key" in written[0]["content"]
+
+
+def test_ensure_workspace_secret_file_refuses_to_overwrite(monkeypatch) -> None:
+    monkeypatch.setattr(common, "ensure_workspace_secret_root", lambda ctx: None)
+    monkeypatch.setattr(
+        common, "docker_exec", lambda ctx, script, **kwargs: SimpleNamespace(ok=True, stdout=""),
+    )
+    monkeypatch.setattr(
+        common,
+        "write_container_file",
+        lambda *args, **kwargs: pytest.fail("wrote over existing secrets"),
+    )
+
+    with pytest.raises(RuntimeError, match="Refusing to overwrite existing workspace secrets"):
+        common.ensure_workspace_secret_file(object(), "demo", "workspace:a-key")
+
+
+def test_assert_container_workspace_absent_checks_the_volume_backed_paths(monkeypatch) -> None:
+    checked: list[str] = []
+
+    def fake_docker_exec(ctx, script, **kwargs):
+        checked.append(script)
+        # No such user, and none of the directories exist.
+        return SimpleNamespace(ok=script.startswith("test !"), stdout="")
+
+    monkeypatch.setattr(common, "docker_exec", fake_docker_exec)
+
+    common.assert_container_workspace_absent(object(), "demo")
+
+    assert checked == [
+        "id -u demo",
+        "test ! -e /home/demo",
+        "test ! -e /workspaces/secrets/demo",
+        "test ! -e /etc/ssh/authorized_keys/demo",
+    ]
+
+
+@pytest.mark.parametrize("occupied", ["/home/demo", "/workspaces/secrets/demo"])
+def test_assert_container_workspace_absent_refuses_leftovers_in_the_volumes(monkeypatch, occupied) -> None:
+    def fake_docker_exec(ctx, script, **kwargs):
+        if script == "id -u demo":
+            return SimpleNamespace(ok=False, stdout="")
+        return SimpleNamespace(ok=script != f"test ! -e {occupied}", stdout="")
+
+    monkeypatch.setattr(common, "docker_exec", fake_docker_exec)
+
+    with pytest.raises(RuntimeError, match=f"{occupied} already exists"):
+        common.assert_container_workspace_absent(object(), "demo")

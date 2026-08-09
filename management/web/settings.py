@@ -41,10 +41,12 @@ INSTALLED_APPS = [
 
     "access_control",
     "credentials",
+    "runtimes",
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -54,6 +56,9 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'web.urls'
+
+# The template engine that renders workspace configuration files rather than HTML.
+CONFIG_TEMPLATE_ENGINE = "configs"
 
 TEMPLATES = [
     {
@@ -66,6 +71,17 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
             ],
+        },
+    },
+    {
+        # Renders supervisord and nginx configuration. HTML escaping would corrupt quotes and
+        # ampersands in command lines, so this engine has it switched off.
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'NAME': CONFIG_TEMPLATE_ENGINE,
+        'DIRS': [],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'autoescape': False,
         },
     },
 ]
@@ -124,6 +140,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Uvicorn serves no static files by itself, so WhiteNoise does it. Admin is the only frontend, so
+# its files come straight from the staticfiles finders. That skips collectstatic and a STATIC_ROOT,
+# and makes DEBUG=false behave like DEBUG=true, which both default to for this setting.
+WHITENOISE_USE_FINDERS = True
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
@@ -133,3 +154,16 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Management service settings
 
 GPGHOME = ENVIRONMENT.management.credentials.gpghome
+
+# The full control key, scheme prefix included, as used by the invoke CLI on the host.
+# When it is unset no caller can authenticate as control and the CLI receives a 401.
+CONTROL_API_KEY = ENVIRONMENT.management.security.api_key
+
+
+# Process control over the supervisord in the workspaces container. The URL resolves both from the
+# management container and from the host, where install.hosts-file maps the service names.
+
+SUPERVISOR_URL = ENVIRONMENT.workspaces.supervisor.url
+SUPERVISOR_USERNAME = ENVIRONMENT.workspaces.supervisor.username
+SUPERVISOR_PASSWORD = ENVIRONMENT.workspaces.supervisor.password
+SUPERVISOR_CLIENT = "runtimes.supervisor.XmlRpcSupervisorClient"

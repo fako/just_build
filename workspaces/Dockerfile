@@ -40,21 +40,23 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 RUN mkdir -p /var/log/supervisor \
     && mkdir -p /var/log/nginx \
-    && mkdir -p /var/log/projects \
+    && mkdir -p /var/log/workspaces \
     && mkdir -p /etc/supervisor/conf.d \
     && mkdir -p /etc/nginx/conf.d \
-    && mkdir -p /workspaces/state
+    && mkdir -p /workspaces/state \
+    && mkdir -p /workspaces/secrets \
+    && chmod 711 /workspaces/secrets
 
 COPY container/docker-entrypoint.sh /usr/local/bin/workspaces-entrypoint
-COPY container/load_user_passwords.sh container/load_opencode_secret.sh /usr/local/bin/
+COPY container/load_user_passwords.sh \
+     container/load_supervisor_secret.sh container/create_log_directories.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/workspaces-entrypoint \
     /usr/local/bin/load_user_passwords.sh \
-    /usr/local/bin/load_opencode_secret.sh
+    /usr/local/bin/load_supervisor_secret.sh \
+    /usr/local/bin/create_log_directories.sh
 
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
-COPY nginx/opencode-proxy.conf /etc/nginx/opencode-proxy.conf
-COPY nginx/opencode-auth.conf.template /etc/nginx/templates/opencode-auth.conf.template
-COPY supervisor/supervisord.conf /etc/supervisor/supervisord.conf
+COPY supervisor/supervisord.conf.template /etc/supervisor/templates/supervisord.conf.template
 COPY ssh/sshd_config /etc/ssh/sshd_config
 COPY ssh/keys/ssh_host_ed25519_key ssh/keys/ssh_host_ed25519_key.pub /etc/ssh/
 COPY ssh/keys/ssh_host_rsa_key ssh/keys/ssh_host_rsa_key.pub /etc/ssh/

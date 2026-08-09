@@ -8,6 +8,7 @@
 		"editor.rulers": [120],
 		"workbench.editor.wrapTabs": true,
 		"editor.inlayHints.enabled": "off",
+		"workbench.tree.indent": 16,
   		"files.exclude": {
     			"**/__pycache__": true,
     			"**/.pytest_cache": true
