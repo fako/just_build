@@ -21,6 +21,7 @@ from ninja import NinjaAPI
 from access_control.authentication import api_key_auth
 from access_control.router import router as access_control_router
 from runtimes.router import router as runtimes_router
+from workflows.router import router as workflows_router
 
 
 api = NinjaAPI(
@@ -32,6 +33,7 @@ api = NinjaAPI(
 # Add main router
 api.add_router("", access_control_router)
 api.add_router("", runtimes_router)
+api.add_router("", workflows_router)
 
 
 urlpatterns = [

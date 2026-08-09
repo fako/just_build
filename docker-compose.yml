@@ -1,5 +1,6 @@
 volumes:
   postgres:
+  redis:
   n8n:
   workspaces_homes:
   workspaces_secrets:
@@ -34,10 +35,14 @@ x-n8n-core: &n8n_core
     - GENERIC_TIMEZONE=Europe/Amsterdam
     - WEBHOOK_URL=http://${INVOKE_N8N_HOST}/
     - N8N_EDITOR_BASE_URL=http://${INVOKE_N8N_HOST}/
+    # No N8N_ENCRYPTION_KEY on purpose. n8n generates one on first boot and persists it in the volume
+    # below, which both services share. It only encrypts credentials, and credentials are entered by
+    # hand in the n8n UI and never stored by this repository, so there is nothing here for a key in
+    # .env to make portable. Losing the volume means re-entering them.
     - N8N_PROTOCOL=http
-    - N8N_ENCRYPTION_KEY=${INVOKE_N8N_ENCRYPTION_KEY}
     - N8N_HOST=${INVOKE_N8N_HOST}
     - N8N_SECURE_COOKIE=false
+    - N8N_PROXY_HOPS=1
 
 
 services:
@@ -64,6 +69,8 @@ services:
     image: redis:6-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis:/data
     healthcheck:
       test: [ 'CMD', 'redis-cli', 'ping' ]
       interval: 5s
@@ -87,16 +94,43 @@ services:
 
   n8n:
     <<: *n8n_core
-    profiles: [services, workspaces]
+    # Present under control as well as services: management reaches n8n over the compose network, so
+    # a control stack without it answers every workflow call with a 502.
+    profiles: [services, control, workspaces]
     ports:
       - "127.0.0.1:5678:5678"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:5678/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   n8n-worker:
     <<: *n8n_core
-    profiles: [services, workspaces]
+    profiles: [services, control, workspaces]
     command: worker
+    # Restated in full rather than adding to the anchor: a merge key replaces the whole depends_on
+    # map, so listing only n8n here would drop the health gates the anchor sets on postgres and redis.
     depends_on:
-      - n8n
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
+
+  nginx:
+    # Serves the service hostnames that containers hand out to the outside world. Only n8n needs one
+    # today; the workspaces container runs its own nginx for workspace runtimes on port 7000.
+    profiles: [services, control, workspaces]
+    image: nginx:alpine
+    volumes:
+      - ./services/nginx/conf.d/:/etc/nginx/conf.d/
+    ports:
+      - "127.0.0.1:80:80"
+    depends_on:
+      n8n:
+        condition: service_healthy
 
   management:
     profiles: [control, workspaces]
@@ -115,6 +149,8 @@ services:
       - INVOKE_MANAGEMENT_DATABASE_USER=${INVOKE_MANAGEMENT_DATABASE_USER}
       - INVOKE_MANAGEMENT_DATABASE_PASSWORD=${INVOKE_MANAGEMENT_DATABASE_PASSWORD}
       - INVOKE_WORKSPACES_SUPERVISOR_PASSWORD=${INVOKE_WORKSPACES_SUPERVISOR_PASSWORD}
+      - INVOKE_N8N_API_KEY=${INVOKE_N8N_API_KEY}
+      - INVOKE_N8N_API_PROJECT_ID=${INVOKE_N8N_API_PROJECT_ID}
     develop:
       watch:
         - action: sync

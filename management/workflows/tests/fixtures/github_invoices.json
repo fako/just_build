@@ -1,0 +1,92 @@
+{
+    "updatedAt": "2026-03-13T10:20:37.017Z",
+    "createdAt": "2026-02-14T21:17:23.262Z",
+    "id": "QZLAkiLCTmr6SZCllVtov",
+    "name": "Github invoices",
+    "description": null,
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+        {
+            "parameters": {
+                "operation": "markAsRead",
+                "messageId": "={{ $('Single email').item.json.id }}"
+            },
+            "type": "n8n-nodes-base.gmail",
+            "typeVersion": 2.2,
+            "position": [
+                320,
+                -128
+            ],
+            "id": "bbe2cb57-1284-4427-95b2-4ead22ed82b6",
+            "name": "Mark as read",
+            "webhookId": "17ed1c7e-4d89-48c7-9f07-ed51d833b328",
+            "credentials": {
+                "gmailOAuth2": {
+                    "id": "598Iuek3tXAaPv98",
+                    "name": "Gmail account"
+                }
+            }
+        },
+        {
+            "parameters": {},
+            "type": "n8n-nodes-base.limit",
+            "typeVersion": 1,
+            "position": [
+                -304,
+                -128
+            ],
+            "id": "daa4e317-2fae-424f-a19c-7b26d0ae374e",
+            "name": "Single email"
+        }
+    ],
+    "connections": {
+        "Single email": {
+            "main": [
+                [
+                    {
+                        "node": "Extract from File",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1",
+        "availableInMCP": false
+    },
+    "staticData": null,
+    "meta": {
+        "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "tags": [
+        {
+            "updatedAt": "2026-03-13T10:20:30.706Z",
+            "createdAt": "2026-03-13T10:20:30.706Z",
+            "id": "zUry7OdkQoSDCHVO",
+            "name": "business"
+        }
+    ],
+    "shared": [
+        {
+            "updatedAt": "2026-02-14T21:17:23.262Z",
+            "createdAt": "2026-02-14T21:17:23.262Z",
+            "role": "workflow:owner",
+            "workflowId": "QZLAkiLCTmr6SZCllVtov",
+            "projectId": "wW51QMl7bKp7XPVS",
+            "project": {
+                "updatedAt": "2025-12-25T23:30:23.248Z",
+                "createdAt": "2025-12-25T23:30:00.112Z",
+                "id": "wW51QMl7bKp7XPVS",
+                "name": "Fako Berkers <email@fakoberkers.nl>",
+                "type": "personal",
+                "icon": null,
+                "description": null,
+                "creatorId": "3ce79d91-e23a-400d-92b9-d4ba4fda1e82"
+            }
+        }
+    ]
+}

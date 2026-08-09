@@ -25,6 +25,12 @@ from workspaces.cli.repository import assert_no_git_repo, ensure_git_repo, ensur
 DEFAULT_TEMPLATES = ("default",)
 TEMPLATE_ENV = Environment(autoescape=False, keep_trailing_newline=True, undefined=StrictUndefined)
 
+# Python writes these next to any template module it imports, and they are bytecode for whichever
+# interpreter happened to do it. Copying them into a workspace uploads stale binaries as if they were
+# source, so they are skipped rather than left to whoever remembers to clean the directory.
+IGNORED_TEMPLATE_DIRS = ("__pycache__",)
+IGNORED_TEMPLATE_SUFFIXES = (".pyc", ".pyo")
+
 
 def ensure_django_project(conn, repo_dir: str, runtime_module: str) -> bool:
     result = conn.run(
@@ -75,6 +81,13 @@ def ensure_remote_template_dir(conn, repo_dir: str, relative_dir: Path) -> None:
 
     remote_dir = f"{repo_dir}/{relative_dir.as_posix()}"
     conn.run(f"test -d {quote(remote_dir)} || mkdir -p {quote(remote_dir)}", echo=True)
+
+
+def is_ignored_template_path(relative_path: Path) -> bool:
+    """Whether a path inside a template is build output rather than something to scaffold."""
+    if any(part in IGNORED_TEMPLATE_DIRS for part in relative_path.parts):
+        return True
+    return relative_path.suffix in IGNORED_TEMPLATE_SUFFIXES
 
 
 def template_output_path(relative_path: Path) -> Path:
@@ -129,6 +142,9 @@ def copy_template_files(conn, repo_dir: str, template_name: str, workspace: Work
 
     for local_path in sorted(source_dir.rglob("*")):
         relative_path = local_path.relative_to(source_dir)
+        if is_ignored_template_path(relative_path):
+            continue
+
         if local_path.is_dir():
             ensure_remote_template_dir(conn, repo_dir, relative_path)
             continue

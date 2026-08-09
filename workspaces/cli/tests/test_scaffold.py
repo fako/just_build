@@ -158,6 +158,73 @@ def test_default_opencode_template_uses_workspace_reference_without_server_crede
     assert "password" not in rendered.lower()
 
 
+def test_compiled_python_is_never_scaffolded(tmp_path, monkeypatch) -> None:
+    """
+    Templates hold real modules, and importing one leaves bytecode beside it.
+
+    Uploading that into a workspace ships binaries as if they were source, and the read fails on the
+    first byte that is not UTF-8, so it is skipped at the source.
+    """
+    source_dir = tmp_path / "n8n"
+    (source_dir / "__pycache__").mkdir(parents=True)
+    (source_dir / "__pycache__" / "tasks.cpython-312.pyc").write_bytes(b"\xcb\x0d\x0d\x0a")
+    (source_dir / "tasks.py").write_text("namespace = None\n", encoding="utf-8")
+
+    monkeypatch.setattr(scaffold_cli, "template_dir", lambda template_name: source_dir)
+    conn = RecordingConnection()
+
+    scaffold_cli.copy_template_files(conn, "/home/demo", "n8n", workspace_record(), "web")
+
+    assert list(conn.uploads) == ["/home/demo/tasks.py"]
+    assert not any("__pycache__" in command for command in conn.commands)
+
+
+def test_n8n_template_lays_out_a_flat_workflows_directory() -> None:
+    conn = RecordingConnection()
+
+    scaffold_cli.copy_template_files(conn, "/home/demo", "n8n", workspace_record(), "web")
+
+    assert "/home/demo/n8n/workflows/.gitkeep" in conn.uploads
+    assert "/home/demo/n8n/tasks.py" in conn.uploads
+    assert "/home/demo/n8n/AGENT.md" in conn.uploads
+    # Credentials stay out of the workspace entirely, which is easier to keep true when there is
+    # nowhere obvious to put them.
+    assert not any("credential" in path for path in conn.uploads)
+
+
+def test_n8n_template_replaces_the_root_task_namespace() -> None:
+    """The default template writes an empty one, so this overwrites rather than introduces."""
+    conn = RecordingConnection()
+
+    scaffold_cli.copy_template_files(conn, "/home/demo", "default", workspace_record(), "web")
+    scaffold_cli.copy_template_files(conn, "/home/demo", "n8n", workspace_record(), "web")
+
+    assert "n8n.tasks" in conn.uploads["/home/demo/tasks.py"]
+
+
+def test_n8n_client_template_reaches_management_as_the_workspace() -> None:
+    template_path = scaffold_cli.TEMPLATES_DIR / "n8n" / "n8n" / "client.tpl.py"
+
+    rendered = scaffold_cli.render_template_file(template_path, workspace_record(), "web")
+
+    assert "/workspaces/secrets/demo/.env" in rendered
+    assert "WORKSPACE_API_KEY" in rendered
+    # The workspace goes through management, never straight at n8n: the tag registry management holds
+    # is the only thing keeping one workspace out of another's workflows.
+    assert "5678" not in rendered
+    assert "X-N8N-API-KEY" not in rendered
+
+
+def test_default_template_carries_what_the_task_templates_need() -> None:
+    """Layering replaces pyproject.toml wholesale, so the shared dependencies belong in every copy."""
+    for template_name in ("default", "celery"):
+        template_path = scaffold_cli.TEMPLATES_DIR / template_name / "pyproject.tpl.toml"
+        rendered = scaffold_cli.render_template_file(template_path, workspace_record(), "web")
+
+        assert "invoke==" in rendered, template_name
+        assert "requests==" in rendered, template_name
+
+
 def test_ensure_workspace_database_uses_generated_workspace_secrets(monkeypatch) -> None:
     monkeypatch.setattr(
         common_cli,

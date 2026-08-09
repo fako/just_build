@@ -28,6 +28,14 @@ def runtime_model() -> type[Model]:
     return apps.get_model("runtimes", "Runtime")
 
 
+def workflow_model() -> type[Model]:
+    return apps.get_model("workflows", "Workflow")
+
+
+def workflow_tag_model() -> type[Model]:
+    return apps.get_model("workflows", "WorkflowTag")
+
+
 class Principal:
     """The authenticated caller, expressed as the data it is allowed to see."""
 
@@ -37,6 +45,12 @@ class Principal:
         raise NotImplementedError
 
     def runtimes(self) -> QuerySet:
+        raise NotImplementedError
+
+    def workflows(self) -> QuerySet:
+        raise NotImplementedError
+
+    def workflow_tags(self) -> QuerySet:
         raise NotImplementedError
 
 
@@ -50,6 +64,12 @@ class ControlPrincipal(Principal):
 
     def runtimes(self) -> QuerySet:
         return runtime_model().objects.all()
+
+    def workflows(self) -> QuerySet:
+        return workflow_model().objects.all()
+
+    def workflow_tags(self) -> QuerySet:
+        return workflow_tag_model().objects.all()
 
     def __str__(self) -> str:
         return "control"
@@ -66,6 +86,12 @@ class WorkspacePrincipal(Principal):
 
     def runtimes(self) -> QuerySet:
         return runtime_model().objects.filter(workspace=self.workspace)
+
+    def workflows(self) -> QuerySet:
+        return workflow_model().objects.filter(workspace=self.workspace)
+
+    def workflow_tags(self) -> QuerySet:
+        return workflow_tag_model().objects.filter(workspace=self.workspace)
 
     def __str__(self) -> str:
         return f"workspace:{self.workspace.module}"

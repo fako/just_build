@@ -11,8 +11,15 @@ n8n:
     name: n8n
     user: n8n
     password: null
-  encryption_key: null
-  host: "n8n.local"
+  host: "n8n.localhost"
+  api:
+    url: "http://n8n:5678/api/v1"
+    # Minted by hand in the n8n UI and pasted into .env: n8n has no environment variable or CLI
+    # command that creates one. See invoke install.n8n.
+    key: null
+    # The single project every workspace writes into. Workspaces are kept apart by tags rather than
+    # by projects, because project management is a licensed n8n feature.
+    project_id: null
 
 workspaces:
   supervisor:
