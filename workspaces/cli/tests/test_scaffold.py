@@ -11,14 +11,18 @@ common_cli = importlib.import_module("workspaces.cli.common")
 
 
 class RecordingConnection:
-    def __init__(self, ok: bool = False) -> None:
+    def __init__(self, ok: bool = False, outputs: dict[str, str] | None = None) -> None:
         self.ok = ok
+        self.outputs = outputs or {}
         self.commands: list[str] = []
         self.uploads: dict[str, str] = {}
 
     def run(self, command: str, echo: bool = False, hide: bool = False, warn: bool = False):
         self.commands.append(command)
-        return SimpleNamespace(ok=self.ok)
+        for fragment, stdout in self.outputs.items():
+            if fragment in command:
+                return SimpleNamespace(ok=True, stdout=stdout, stderr="")
+        return SimpleNamespace(ok=self.ok, stdout="", stderr="")
 
     def put(self, local: str, remote: str) -> None:
         self.uploads[remote] = Path(local).read_text(encoding="utf-8")
@@ -120,6 +124,125 @@ def test_scaffold_checks_for_a_repository_even_without_git(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="already has a git repository"):
         scaffold_cli.scaffold.body(RecordingContext(), "demo", git=False)
+
+
+def over_existing_connection(outputs: dict[str, str] | None = None) -> RecordingConnection:
+    """A workspace holding a clean repository, which is what --over-existing asks for."""
+    return RecordingConnection(ok=True, outputs=outputs or {})
+
+
+def test_scaffold_over_existing_layers_templates_without_touching_git(monkeypatch) -> None:
+    """
+    The point of the mode: the templates land as changes, and the human decides what to do with them.
+
+    Nothing here initializes a repository, starts a Django project or commits, because all three
+    belong to a project that is not there yet.
+    """
+    conn = over_existing_connection()
+    setup_steps: list[str] = []
+    copied: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(scaffold_cli, "get_workspace", lambda workspace_module: scaffold_workspace())
+    monkeypatch.setattr(scaffold_cli, "build_ssh_connection", lambda received_workspace: conn)
+    monkeypatch.setattr(
+        scaffold_cli, "ensure_git_repo", lambda *args: pytest.fail("git repository initialized over a project"),
+    )
+    monkeypatch.setattr(
+        scaffold_cli, "ensure_django_project", lambda *args: pytest.fail("django-admin run over a project"),
+    )
+    monkeypatch.setattr(
+        scaffold_cli, "ensure_initial_commit", lambda *args: pytest.fail("templates committed for the reviewer"),
+    )
+    monkeypatch.setattr(
+        scaffold_cli, "copy_workspace_templates",
+        lambda conn, repo_dir, names, workspace, runtime_module: copied.append(names) or names,
+    )
+    monkeypatch.setattr(scaffold_cli, "log_setup_step", lambda workspace_module, step: setup_steps.append(step))
+
+    scaffold_cli.scaffold.body(RecordingContext(), "demo", templates="default,celery", over_existing=True)
+
+    assert setup_steps == ["templates_resolved"]
+    assert copied == [("default", "celery")]
+    assert "git -C /home/demo status --porcelain --untracked-files=no" in conn.commands
+
+
+def test_scaffold_over_existing_needs_a_repository_to_undo_it_with(monkeypatch) -> None:
+    monkeypatch.setattr(scaffold_cli, "get_workspace", lambda workspace_module: scaffold_workspace())
+    monkeypatch.setattr(scaffold_cli, "build_ssh_connection", lambda received_workspace: RecordingConnection())
+    monkeypatch.setattr(
+        scaffold_cli, "copy_workspace_templates", lambda *args: pytest.fail("templates written outside a repository"),
+    )
+
+    with pytest.raises(RuntimeError, match="has no git repository"):
+        scaffold_cli.scaffold.body(RecordingContext(), "demo", over_existing=True)
+
+
+def test_scaffold_over_existing_refuses_uncommitted_work(monkeypatch) -> None:
+    conn = over_existing_connection({"status --porcelain": " M pyproject.toml\n"})
+    monkeypatch.setattr(scaffold_cli, "get_workspace", lambda workspace_module: scaffold_workspace())
+    monkeypatch.setattr(scaffold_cli, "build_ssh_connection", lambda received_workspace: conn)
+    monkeypatch.setattr(
+        scaffold_cli, "copy_workspace_templates", lambda *args: pytest.fail("templates written over pending work"),
+    )
+
+    with pytest.raises(RuntimeError, match="has uncommitted changes"):
+        scaffold_cli.scaffold.body(RecordingContext(), "demo", over_existing=True)
+
+
+def test_template_file_paths_names_what_a_run_writes_once(monkeypatch) -> None:
+    """Layered templates share files, and a second template landing on the first is not an overwrite."""
+    paths = scaffold_cli.template_file_paths(("default", "celery"))
+
+    assert paths.count("pyproject.toml") == 1
+    assert "web/settings.py" in paths
+    assert not any(".tpl." in path for path in paths)
+
+
+def test_report_template_overwrites_lists_the_tracked_files_it_replaces(capsys, monkeypatch) -> None:
+    conn = RecordingConnection(outputs={
+        "for path in": "/home/demo/pyproject.toml\n/home/demo/tasks.py\n",
+        "ls-files": "pyproject.toml\ntasks.py\n",
+    })
+    monkeypatch.setattr(scaffold_cli, "template_file_paths", lambda names: ("pyproject.toml", "tasks.py", "AGENT.md"))
+
+    overwritten = scaffold_cli.report_template_overwrites(conn, "/home/demo", ("default",), "demo")
+
+    assert overwritten == ("pyproject.toml", "tasks.py")
+    printed = capsys.readouterr().out
+    assert "Writing over 2 tracked files" in printed
+    assert "pyproject.toml" in printed
+    # Asked once for everything the templates write, rather than once per file.
+    assert len([command for command in conn.commands if command.startswith("for path in")]) == 1
+
+
+def test_report_template_overwrites_refuses_files_git_cannot_give_back(capsys, monkeypatch) -> None:
+    """
+    An untracked file a template covers has no earlier copy anywhere, so overwriting it is final.
+
+    Everything else this mode does can be read as a diff and reverted, which is the whole reason it
+    is allowed to write over a project at all.
+    """
+    conn = RecordingConnection(outputs={
+        "for path in": "/home/demo/pyproject.toml\n/home/demo/AGENT.md\n",
+        "ls-files": "pyproject.toml\n",
+    })
+    monkeypatch.setattr(scaffold_cli, "template_file_paths", lambda names: ("pyproject.toml", "AGENT.md"))
+
+    with pytest.raises(RuntimeError) as error:
+        scaffold_cli.report_template_overwrites(conn, "/home/demo", ("default",), "demo")
+
+    message = str(error.value)
+    assert "AGENT.md" in message
+    assert "pyproject.toml" not in message
+
+
+def test_report_template_overwrites_stays_quiet_on_a_project_it_does_not_touch(capsys, monkeypatch) -> None:
+    conn = RecordingConnection(outputs={"for path in": ""})
+    monkeypatch.setattr(scaffold_cli, "template_file_paths", lambda names: ("pyproject.toml",))
+
+    assert scaffold_cli.report_template_overwrites(conn, "/home/demo", ("default",), "demo") == ()
+    assert capsys.readouterr().out == ""
+    assert not any("ls-files" in command for command in conn.commands)
 
 
 def test_copy_template_files_traverses_directories_and_renders_templates(tmp_path, monkeypatch) -> None:

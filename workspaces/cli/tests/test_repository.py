@@ -214,6 +214,66 @@ def test_assert_no_git_repo_passes_on_an_empty_home() -> None:
     repository.assert_no_git_repo(conn, "/home/demo", "demo")
 
 
+def test_assert_git_repo_refuses_a_home_without_one() -> None:
+    conn = RecordingConnection({"test -d /home/demo/.git": result(ok=False)})
+
+    with pytest.raises(RuntimeError) as error:
+        repository.assert_git_repo(conn, "/home/demo", "demo")
+
+    assert "has no git repository at /home/demo" in str(error.value)
+
+
+def test_assert_git_repo_passes_on_a_repository() -> None:
+    repository.assert_git_repo(RecordingConnection(), "/home/demo", "demo")
+
+
+def test_assert_clean_worktree_refuses_uncommitted_changes() -> None:
+    conn = RecordingConnection({"status --porcelain": result(stdout=" M pyproject.toml\n M web/settings.py\n")})
+
+    with pytest.raises(RuntimeError) as error:
+        repository.assert_clean_worktree(conn, "/home/demo", "demo")
+
+    message = str(error.value)
+    assert "has uncommitted changes in /home/demo" in message
+    assert "M web/settings.py" in message
+
+
+def test_assert_clean_worktree_ignores_the_home_directory_around_the_repository() -> None:
+    """
+    The repository root is the workspace home, so .bashrc and .ssh are untracked in every clone.
+
+    Refusing on those would refuse every workspace, and they are not what templates overwrite.
+    """
+    conn = RecordingConnection({"status --porcelain": result(stdout="")})
+
+    repository.assert_clean_worktree(conn, "/home/demo", "demo")
+
+    assert "git -C /home/demo status --porcelain --untracked-files=no" in conn.commands
+
+
+def test_assert_clean_worktree_reports_a_status_it_could_not_read() -> None:
+    conn = RecordingConnection({"status --porcelain": result(ok=False, stderr="not a git repository")})
+
+    with pytest.raises(RuntimeError, match="not a git repository"):
+        repository.assert_clean_worktree(conn, "/home/demo", "demo")
+
+
+def test_list_tracked_files_asks_git_about_the_paths_it_was_given() -> None:
+    conn = RecordingConnection({"ls-files": result(stdout="pyproject.toml\ntasks.py\n")})
+
+    tracked = repository.list_tracked_files(conn, "/home/demo", ("pyproject.toml", "tasks.py", "AGENT.md"))
+
+    assert tracked == ("pyproject.toml", "tasks.py")
+    assert "git -C /home/demo ls-files -- pyproject.toml tasks.py AGENT.md" in conn.commands
+
+
+def test_list_tracked_files_asks_nothing_when_there_is_nothing_to_ask_about() -> None:
+    conn = RecordingConnection()
+
+    assert repository.list_tracked_files(conn, "/home/demo", ()) == ()
+    assert conn.commands == []
+
+
 def test_fetch_origin_runs_one_agent_for_the_whole_fetch() -> None:
     conn = RecordingConnection()
 

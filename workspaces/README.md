@@ -80,6 +80,13 @@ invoke workspaces.clone-repo --workspace-module=my_workspace \
     --repository=git@github.com:owner/repository.git
 ```
 
+Cloning applies no templates of its own. To add the workspace tooling to what was cloned, follow it with a scaffold
+over the project, which leaves the templates as uncommitted changes to review:
+
+```bash
+invoke workspaces.scaffold --workspace-module=my_workspace --over-existing
+```
+
 To add a Celery worker as well, layer the celery template and add a second runtime:
 
 ```bash
@@ -185,6 +192,8 @@ The commands do the following:
   resolves workspace templates, and by default initializes git and creates the initial commit
 - `workspaces.clone-repo` is the alternative to scaffolding: it brings an existing repository into the same
   home directory, using the workspace's own key
+- `workspaces.scaffold --over-existing` applies templates to a project that is already there, cloned or scaffolded
+  earlier, and leaves the result uncommitted for review
 - `runtimes.add` records the runtime in management and allocates its port
 - `runtimes.install` runs what the runtime type needs inside the workspace, which is what makes it enableable
 - `runtimes.enable` writes its configuration and starts it under supervisord
@@ -216,6 +225,28 @@ invoke workspaces.scaffold --workspace-module=my_workspace --no-git
 Templates overwrite what they cover, so scaffolding is for new projects only, and it refuses to run when the
 workspace home already holds a git repository. A repository that already exists comes in through
 `workspaces.clone-repo`, which applies no templates at all.
+
+To layer the templates onto a project that is already in the workspace, cloned or scaffolded earlier, use:
+
+```bash
+invoke workspaces.scaffold --workspace-module=my_workspace --over-existing
+```
+
+This is the one way templates and an existing project meet. It writes the same files, but leaves them as changes
+rather than as a commit: new template files show up untracked, files the project already had show up modified, and
+what to keep is decided by reading `git diff` in the workspace. Nothing is committed, no repository is initialized
+and `django-admin startproject` is not run, so `--git` has nothing to do in this mode.
+
+Two things have to hold before it will run, because both are what makes the result reviewable:
+
+- the workspace home is a git repository, so every write can be undone
+- nothing is uncommitted in it, so the diff afterwards is exactly what the templates wrote
+
+Untracked files in the home directory are fine and expected: the repository root is the home directory, so `.bashrc`,
+`.ssh` and `venv/` are untracked in every clone until the `default` template's `.gitignore` covers them. What the
+command refuses is an untracked file that a template would land on, such as a `pyproject.toml` that was never
+committed, because git has no earlier copy of it to give back. Commit it or move it aside first. Everything the
+templates do overwrite is listed before they are applied.
 
 Interactive SSH shells automatically activate `/home/<workspace-module>/venv` once it exists. Workspace creation
 installs this behavior in both `.profile` and `.bashrc`, covering Bash login and non-login interactive shells.
