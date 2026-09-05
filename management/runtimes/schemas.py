@@ -23,8 +23,15 @@ class SupervisordConfiguration(RuntimeConfiguration):
 
 
 class HttpConfiguration(SupervisordConfiguration):
-    # Defaults to "<workspace slug>.localhost".
-    domain: str | None = None
+    # One label, not a domain, which is why it is not called one: it is composed with a zone to make
+    # the name a browser on the host uses. Defaults to the workspace slug, and only the primary
+    # runtime has one at all.
+    subdomain: str | None = None
+    # Fully qualified names added by a human or an agent: the home network box, a VPS, a customer
+    # domain. Kept apart from `subdomain` because they are a different kind of thing rather than a
+    # longer version of the same one. Management routes them; it does not own or verify them, and
+    # nothing here makes them resolve.
+    domains: list[str] = Field(default_factory=list)
     workers: int = Field(default=2, ge=1, le=16)
 
 

@@ -196,6 +196,13 @@ services:
       - workspaces_state:/workspaces/state
     environment:
       - WORKSPACES_SUPERVISOR_PASSWORD=${INVOKE_WORKSPACES_SUPERVISOR_PASSWORD}
+    networks:
+      default:
+        aliases:
+          # The one name container-to-container traffic has to resolve. Everything identifying a
+          # runtime travels in the path behind it, so this list never grows as workspaces are added.
+          # A name per workspace would have to be listed here and would need a recreate each time.
+          - runtimes.workspaces
     depends_on:
       postgres:
         condition: service_healthy

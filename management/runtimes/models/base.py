@@ -74,6 +74,9 @@ class Runtime(models.Model):
     configuration = models.JSONField(default=dict, blank=True)
     # Only runtimes that serve HTTP hold a port, and it is unique across the whole container.
     port = models.PositiveIntegerField(null=True, blank=True, unique=True)
+    # The runtime a workspace's bare name resolves to. A field rather than a convention over `name`,
+    # because which runtime a workspace fronts is a choice, and one a workspace may want to move.
+    is_primary = models.BooleanField(default=False)
     is_enabled = models.BooleanField(default=False)
     installed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -84,10 +87,22 @@ class Runtime(models.Model):
     # Set by register_runtime on each proxy model.
     runtime_type: str = ""
     configuration_schema: type[RuntimeConfiguration] = RuntimeConfiguration
+    # Whether this type answers HTTP, and so whether it can front a workspace. A class attribute
+    # rather than an isinstance check because this module defines the base that the HTTP module
+    # imports, and cannot import it back.
+    serves_http: bool = False
 
     class Meta:
         unique_together = ("workspace", "name")
         ordering = ("workspace__module", "name")
+        constraints = [
+            # A database constraint rather than application code, for the same reason the workflows
+            # app puts tag ownership in one: "a workspace fronts exactly one runtime" is a fact about
+            # the data, and two rows claiming it would mean two server blocks answering to one name.
+            models.UniqueConstraint(
+                fields=["workspace"], condition=models.Q(is_primary=True), name="runtime_unique_primary",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.program_name
@@ -147,6 +162,14 @@ class Runtime(models.Model):
             self.specialize().settings
         except PydanticValidationError as exc:
             raise ValidationError({"configuration": str(exc)}) from exc
+
+        if self.is_primary and not self.specialize().serves_http:
+            raise ValidationError({
+                "is_primary": (
+                    f"A '{self.type}' runtime serves no HTTP, so it has no server block for the "
+                    "workspace's name to reach. Only an HTTP runtime can be the primary one."
+                ),
+            })
 
 
 class SupervisordRuntime(Runtime):

@@ -277,3 +277,80 @@ def test_reload_updates_supervisord_and_reloads_nginx(control_client, supervisor
     assert ("update",) in supervisor.calls
     # nginx runs under supervisord, so reloading it needs no docker exec either.
     assert ("signal", "nginx", "HUP") in supervisor.calls
+
+
+@pytest.mark.django_db
+def test_create_runtime_can_claim_the_workspace_name(control_client, workspace):
+    response = control_client.post(
+        "/api/v1/runtimes/",
+        data={"workspace_module": "magic_match", "type": "django", "name": "web", "is_primary": True},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 201
+    assert response.json()["is_primary"] is True
+
+
+@pytest.mark.django_db
+def test_create_runtime_rejects_a_second_primary(control_client, workspace, django_runtime):
+    django_runtime.is_primary = True
+    django_runtime.save()
+
+    response = control_client.post(
+        "/api/v1/runtimes/",
+        data={"workspace_module": "magic_match", "type": "django", "name": "admin", "is_primary": True},
+        content_type="application/json",
+    )
+
+    # A 409 naming the real collision, rather than the "already has a runtime called" message that
+    # the other unique constraint on this table produces.
+    assert response.status_code == 409
+    assert "already has a primary runtime" in response.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_create_runtime_refuses_a_primary_that_serves_no_http(control_client, workspace):
+    response = control_client.post(
+        "/api/v1/runtimes/",
+        data={"workspace_module": "magic_match", "type": "celery", "name": "worker", "is_primary": True},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 422
+    assert "serves no HTTP" in response.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_patch_leaves_primary_alone_unless_it_is_named(control_client, django_runtime):
+    django_runtime.is_primary = True
+    django_runtime.save()
+
+    response = control_client.patch(
+        f"/api/v1/runtimes/{django_runtime.pk}/",
+        data={"module": "portal"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["is_primary"] is True
+
+
+@pytest.mark.django_db
+def test_patch_can_hand_the_workspace_name_over(control_client, workspace, django_runtime):
+    django_runtime.is_primary = True
+    django_runtime.save()
+    admin = Runtime.objects.create(workspace=workspace, type="django", name="admin", port=8002)
+
+    cleared = control_client.patch(
+        f"/api/v1/runtimes/{django_runtime.pk}/",
+        data={"is_primary": False},
+        content_type="application/json",
+    )
+    claimed = control_client.patch(
+        f"/api/v1/runtimes/{admin.pk}/",
+        data={"is_primary": True},
+        content_type="application/json",
+    )
+
+    assert cleared.json()["is_primary"] is False
+    assert claimed.json()["is_primary"] is True

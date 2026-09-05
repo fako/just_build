@@ -49,13 +49,16 @@ def list_runtimes(ctx: Context, workspace_module: str | None = None):
         "module": "The code the runtime runs, matching what workspaces.scaffold created. Defaults to web.",
         "port": "Fixed port for HTTP runtimes. Left out, management allocates the next free one.",
         "configuration": 'Type specific configuration as JSON, for example \'{"concurrency": 4}\'',
+        "primary": "Give the workspace's bare name to this runtime. HTTP runtimes only, one per workspace.",
     },
 )
 def add(ctx: Context, workspace_module: str, type: str, name: str, module: str = "web",  # noqa: A002
-        port: int | None = None, configuration: str | None = None):
+        port: int | None = None, configuration: str | None = None, primary: bool = False):
     """Add a runtime to a workspace. Enable it to put it on disk."""
     parsed = json.loads(configuration) if configuration else None
-    runtime = client.create_runtime(workspace_module, type, name, module=module, configuration=parsed, port=port)
+    runtime = client.create_runtime(
+        workspace_module, type, name, module=module, configuration=parsed, port=port, is_primary=primary,
+    )
 
     print("")
     print(f"Added {runtime.type} runtime '{runtime.name}' to workspace {workspace_module}.")
@@ -63,6 +66,8 @@ def add(ctx: Context, workspace_module: str, type: str, name: str, module: str =
     print(f"Module: {runtime.module}")
     if runtime.port:
         print(f"Port: {runtime.port}")
+    if runtime.is_primary:
+        print(f"Primary: reachable at {workspace_module.replace('_', '-')}.localhost:7000")
     print(f"Log file: {runtime.log_path}")
     print("Next step:")
     print(f"  invoke runtimes.install --workspace-module={workspace_module} --name={runtime.name}")
@@ -74,10 +79,20 @@ def add(ctx: Context, workspace_module: str, type: str, name: str, module: str =
     "module": "Change the code the runtime runs",
     "configuration": 'Type specific configuration as JSON, for example \'{"concurrency": 4}\'',
     "port": "Change the port of an HTTP runtime",
+    "primary": "Give the workspace's bare name to this runtime, so <workspace>.localhost reaches it",
+    "no_primary": "Take the workspace's bare name away from this runtime",
 })
 def configure(ctx: Context, workspace_module: str, name: str, module: str | None = None,
-              configuration: str | None = None, port: int | None = None):
+              configuration: str | None = None, port: int | None = None,
+              primary: bool = False, no_primary: bool = False):
     """Replace a runtime's configuration. Apply afterwards to put the change on disk."""
+    if primary and no_primary:
+        raise RuntimeError("Pass either --primary or --no-primary, not both.")
+    # Two flags rather than one, because invoke only offers --no-x when the default is True, and a
+    # default of True would claim the workspace's name on every configure call that did not mention
+    # it. Neither flag given has to stay distinguishable from both of them, which is what leaves a
+    # runtime's primary state alone when the call is about something else.
+    is_primary = None if primary == no_primary else primary
     runtime = resolve_runtime(workspace_module, name)
 
     parsed: dict | None = None
@@ -89,12 +104,17 @@ def configure(ctx: Context, workspace_module: str, name: str, module: str | None
         if not isinstance(parsed, dict):
             raise RuntimeError("Configuration must be a JSON object.")
 
-    updated = client.patch_runtime(runtime.id, module=module, configuration=parsed, port=port)
+    updated = client.patch_runtime(
+        runtime.id, module=module, configuration=parsed, port=port, is_primary=is_primary,
+    )
     if updated.is_enabled:
         apply_configs(ctx)
 
     print("")
     print(f"Configured {updated.program_name}: module={updated.module} {json.dumps(updated.configuration)}")
+    if is_primary is not None:
+        names = f"{workspace_module.replace('_', '-')}.localhost:7000"
+        print(f"Primary: {'now answers to ' + names if updated.is_primary else 'no longer holds the workspace name'}")
 
 
 @task(help={
