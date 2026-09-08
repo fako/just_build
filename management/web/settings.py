@@ -26,6 +26,7 @@ DEBUG = ENVIRONMENT.management.security.debug
 ALLOWED_HOSTS = [
     "127.0.0.1",
     "localhost",
+    "management",
 ]
 
 
@@ -42,6 +43,7 @@ INSTALLED_APPS = [
     "access_control",
     "credentials",
     "runtimes",
+    "workflows",
 ]
 
 MIDDLEWARE = [
@@ -167,3 +169,13 @@ SUPERVISOR_URL = ENVIRONMENT.workspaces.supervisor.url
 SUPERVISOR_USERNAME = ENVIRONMENT.workspaces.supervisor.username
 SUPERVISOR_PASSWORD = ENVIRONMENT.workspaces.supervisor.password
 SUPERVISOR_CLIENT = "runtimes.supervisor.XmlRpcSupervisorClient"
+
+
+# The n8n public API. Reached over the compose network, so no docker socket and no shelling out, the
+# same arrangement as supervisord above. The key and the project are filled in by hand following
+# 'invoke install.n8n', because n8n mints neither of them from configuration.
+
+N8N_API_URL = ENVIRONMENT.n8n.api.url
+N8N_API_KEY = ENVIRONMENT.n8n.api.key
+N8N_PROJECT_ID = ENVIRONMENT.n8n.api.project_id
+N8N_CLIENT = "workflows.n8n.HttpN8nClient"

@@ -9,9 +9,12 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = "django-insecure-local-development-only"
 DEBUG = True
 ALLOWED_HOSTS = [
-    "localhost",
     "127.0.0.1",
-    "{{ workspace.slug }}.localhost",
+    # The leading dot matches the domain and every subdomain, which covers both names this runtime
+    # answers to: "{{ workspace.slug }}.localhost" from a browser on the host, and
+    # "{{ workspace.slug }}.<runtime>.localhost" from another container through the /r/ router.
+    # Real domains are added to the runtime's `domains` through management, and belong here too.
+    ".localhost",
 ]
 CSRF_TRUSTED_ORIGINS = [
     "http://{{ workspace.slug }}.localhost:7000",

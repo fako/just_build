@@ -25,3 +25,12 @@ venv/bin/python -m pip install -e .
 
 The supervisor-managed web process runs through `venv/bin/python`, so install dependencies there before expecting the service to start.
 Static files are gathered through collectstatic and end up in staticfiles/
+
+## How domains resolve
+
+This runtime answers to more than one name, and which one to use depends on where the caller is.
+
+* **A browser on the host** reaches the workspace's primary runtime at `http://{{ workspace.slug }}.localhost:7000/`. Every resolver treats anything under `.localhost` as loopback, and that is where the port is published.
+* **Another container** — n8n, or another workspace's runtime — uses `http://runtimes.workspaces:7000/r/{{ workspace.slug }}/<runtime>/`. The workspace and runtime travel in the path, not the hostname, so only that one name has to resolve.
+* **Never call `{{ workspace.slug }}.localhost` from inside a container.** It does resolve, to the *calling* container's own loopback, so the mistake surfaces as a refused connection rather than an unknown host. This is the confusing one.
+* **A real domain** for a home network machine, a VPS or a customer is added to the runtime's `domains` through management. Do not hand-write nginx server blocks: they are generated and will be overwritten on the next `invoke runtimes.apply`.

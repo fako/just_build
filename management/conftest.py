@@ -3,6 +3,7 @@ from django.test import Client
 
 from access_control.models import Workspace
 from runtimes.supervisor import FAKE_SUPERVISOR, FakeSupervisorState
+from workflows.n8n import FAKE_N8N, FakeN8nState
 
 
 CONTROL_API_KEY = "control:11111111-1111-1111-1111-111111111111"
@@ -14,6 +15,16 @@ def supervisor(settings) -> FakeSupervisorState:
     settings.SUPERVISOR_CLIENT = "runtimes.supervisor.FakeSupervisorClient"
     FAKE_SUPERVISOR.reset()
     return FAKE_SUPERVISOR
+
+
+@pytest.fixture
+def n8n(settings) -> FakeN8nState:
+    """Swap n8n for the in-memory fake, so workflows are testable without the service."""
+    settings.N8N_CLIENT = "workflows.n8n.FakeN8nClient"
+    settings.N8N_API_KEY = "test-key"
+    settings.N8N_PROJECT_ID = "project-test"
+    FAKE_N8N.reset()
+    return FAKE_N8N
 
 
 @pytest.fixture

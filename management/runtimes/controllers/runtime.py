@@ -43,6 +43,7 @@ class RuntimeSchema(Schema):
     program_name: str
     configuration: dict
     port: int | None
+    is_primary: bool
     is_enabled: bool
     installed_at: datetime | None
     log_path: str
@@ -61,12 +62,18 @@ class RuntimeCreateSchema(Schema):
     configuration: dict = {}
     # Left out for HTTP runtimes so management allocates the next free one.
     port: int | None = None
+    # Whether the workspace's bare name reaches this runtime. Only one runtime per workspace may
+    # hold it, and only one that serves HTTP.
+    is_primary: bool = False
 
 
 class RuntimePatchSchema(Schema):
     module: str | None = None
     configuration: dict | None = None
     port: int | None = None
+    # Tri-state: None leaves it alone, so moving the workspace's name to another runtime is an
+    # explicit act rather than something a partial update does by omission.
+    is_primary: bool | None = None
 
 
 class ConfigFileSchema(Schema):
@@ -157,14 +164,24 @@ def create_runtime(request: HttpRequest, data: RuntimeCreateSchema) -> tuple[int
 
     runtime = runtime_class(
         workspace=workspace, type=data.type, name=data.name, module=data.module,
-        configuration=data.configuration, port=port,
+        configuration=data.configuration, port=port, is_primary=data.is_primary,
     )
     validate_runtime(runtime)
     try:
         runtime.save()
     except IntegrityError as exc:
-        raise HttpError(409, f"Workspace '{workspace.module}' already has a runtime called '{data.name}'") from exc
+        raise HttpError(409, describe_integrity_error(exc, workspace.module, data.name)) from exc
     return 201, runtime
+
+
+def describe_integrity_error(error: IntegrityError, workspace_module: str, name: str) -> str:
+    """Name which constraint was hit, since a workspace can collide on two different things now."""
+    if "runtime_unique_primary" in str(error):
+        return (
+            f"Workspace '{workspace_module}' already has a primary runtime. Clear it from that one "
+            "before giving the workspace's name to another."
+        )
+    return f"Workspace '{workspace_module}' already has a runtime called '{name}'"
 
 
 def describe_validation_error(error: ValidationError) -> str:
@@ -176,8 +193,11 @@ def describe_validation_error(error: ValidationError) -> str:
 def validate_runtime(runtime: Runtime) -> None:
     """Validate through the specialized class, so each type's own rules and schema apply."""
     try:
-        # Uniqueness is left to the database, which reports it as a 409 rather than a 422.
-        runtime.full_clean(validate_unique=False)
+        # Uniqueness is left to the database, which reports it as a 409 rather than a 422. Meta
+        # constraints are skipped for the same reason and need saying separately, because
+        # validate_constraints is not covered by validate_unique and its message names the
+        # constraint rather than what the caller did.
+        runtime.full_clean(validate_unique=False, validate_constraints=False)
     except ValidationError as exc:
         raise HttpError(422, describe_validation_error(exc)) from exc
 
@@ -229,9 +249,14 @@ def patch_runtime(request: HttpRequest, runtime_id: UUID, data: RuntimePatchSche
         runtime.configuration = data.configuration
     if data.port is not None:
         runtime.port = data.port
+    if data.is_primary is not None:
+        runtime.is_primary = data.is_primary
 
     validate_runtime(runtime)
-    runtime.save(update_fields=["module", "configuration", "port", "modified_at"])
+    try:
+        runtime.save(update_fields=["module", "configuration", "port", "is_primary", "modified_at"])
+    except IntegrityError as exc:
+        raise HttpError(409, describe_integrity_error(exc, runtime.workspace.module, runtime.name)) from exc
     return runtime
 
 

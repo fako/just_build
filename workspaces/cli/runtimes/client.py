@@ -18,6 +18,7 @@ class RuntimeRecord(BaseModel):
     program_name: str
     configuration: dict
     port: int | None
+    is_primary: bool = False
     is_enabled: bool
     installed_at: datetime | None = None
     log_path: str
@@ -95,13 +96,15 @@ def get_runtime(runtime_id: str) -> RuntimeRecord:
 
 
 def create_runtime(workspace_module: str, runtime_type: str, name: str, module: str = "web",
-                   configuration: dict | None = None, port: int | None = None) -> RuntimeRecord:
+                   configuration: dict | None = None, port: int | None = None,
+                   is_primary: bool = False) -> RuntimeRecord:
     payload = {
         "workspace_module": workspace_module,
         "type": runtime_type,
         "name": name,
         "module": module,
         "configuration": configuration or {},
+        "is_primary": is_primary,
     }
     if port is not None:
         payload["port"] = port
@@ -110,7 +113,7 @@ def create_runtime(workspace_module: str, runtime_type: str, name: str, module: 
 
 
 def patch_runtime(runtime_id: str, module: str | None = None, configuration: dict | None = None,
-                  port: int | None = None) -> RuntimeRecord:
+                  port: int | None = None, is_primary: bool | None = None) -> RuntimeRecord:
     payload: dict[str, object] = {}
     if module is not None:
         payload["module"] = module
@@ -118,6 +121,8 @@ def patch_runtime(runtime_id: str, module: str | None = None, configuration: dic
         payload["configuration"] = configuration
     if port is not None:
         payload["port"] = port
+    if is_primary is not None:
+        payload["is_primary"] = is_primary
     response = _request("patch", f"{runtime_id}/", f"update runtime '{runtime_id}'", json=payload)
     return RuntimeRecord.model_validate(response.json())
 

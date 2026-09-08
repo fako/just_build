@@ -85,19 +85,48 @@ def test_nginx_config(django_runtime):
 
     assert "upstream magic_match_web_upstream {" in content
     assert "server 127.0.0.1:8001 fail_timeout=0;" in content
-    assert "server_name magic-match.localhost;" in content
+    # Not the primary runtime, so it answers to its internal name only.
+    assert "server_name magic-match.web.localhost;" in content
     assert "alias /home/magic_match/staticfiles/;" in content
     assert "proxy_pass http://magic_match_web_upstream;" in content
 
 
 @pytest.mark.django_db
-def test_nginx_config_honours_a_configured_domain(workspace):
+def test_nginx_config_gives_the_primary_runtime_the_workspace_name(workspace):
     runtime = Runtime.objects.create(
-        workspace=workspace, type="django", name="web", port=8001,
-        configuration={"domain": "magic.example.test"},
+        workspace=workspace, type="django", name="web", port=8001, is_primary=True,
     )
 
-    assert "server_name magic.example.test;" in config_by_path(runtime)["nginx/magic_match/web.conf"]
+    content = config_by_path(runtime)["nginx/magic_match/web.conf"]
+
+    assert "server_name magic-match.web.localhost magic-match.localhost;" in content
+
+
+@pytest.mark.django_db
+def test_nginx_config_honours_a_configured_subdomain(workspace):
+    runtime = Runtime.objects.create(
+        workspace=workspace, type="django", name="web", port=8001, is_primary=True,
+        configuration={"subdomain": "magic"},
+    )
+
+    content = config_by_path(runtime)["nginx/magic_match/web.conf"]
+
+    # The subdomain replaces the slug in the browser-facing name only. The internal name is derived
+    # rather than configured, because the router builds it and has nothing to read a setting from.
+    assert "server_name magic-match.web.localhost magic.localhost;" in content
+
+
+@pytest.mark.django_db
+def test_nginx_config_appends_configured_domains(workspace):
+    runtime = Runtime.objects.create(
+        workspace=workspace, type="django", name="web", port=8001,
+        configuration={"domains": ["magic.example.test", "magic.lan.example.test"]},
+    )
+
+    content = config_by_path(runtime)["nginx/magic_match/web.conf"]
+
+    # A runtime need not be primary to carry real domains, and they do not displace the internal name.
+    assert "server_name magic-match.web.localhost magic.example.test magic.lan.example.test;" in content
 
 
 @pytest.mark.django_db

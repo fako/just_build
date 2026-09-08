@@ -1,5 +1,6 @@
 import pytest
 from django.core.exceptions import ValidationError
+from django.db.utils import IntegrityError
 
 from access_control.models import Workspace
 from runtimes.models import CeleryRuntime, DjangoRuntime, HttpRuntime, Runtime, SupervisordRuntime
@@ -160,8 +161,38 @@ def test_asgi_module_can_still_be_overridden(workspace):
 
 
 @pytest.mark.django_db
-def test_django_domain_defaults_to_the_workspace_slug(django_runtime):
-    assert django_runtime.specialize().domain == "magic-match.localhost"
+def test_internal_domain_is_derived_from_workspace_and_runtime(django_runtime):
+    assert django_runtime.specialize().internal_domain == "magic-match.web.localhost"
+
+
+@pytest.mark.django_db
+def test_server_names_hold_the_internal_name_until_a_runtime_is_primary(django_runtime):
+    runtime = django_runtime.specialize()
+
+    assert runtime.server_names == ["magic-match.web.localhost"]
+
+    runtime.is_primary = True
+
+    assert runtime.server_names == ["magic-match.web.localhost", "magic-match.localhost"]
+
+
+@pytest.mark.django_db
+def test_a_workspace_cannot_have_two_primary_runtimes(workspace, django_runtime):
+    django_runtime.is_primary = True
+    django_runtime.save()
+
+    with pytest.raises(IntegrityError):
+        Runtime.objects.create(
+            workspace=workspace, type="django", name="admin", port=8002, is_primary=True,
+        )
+
+
+@pytest.mark.django_db
+def test_a_runtime_without_http_cannot_be_primary(celery_runtime):
+    celery_runtime.is_primary = True
+
+    with pytest.raises(ValidationError, match="serves no HTTP"):
+        celery_runtime.clean()
 
 
 @pytest.mark.django_db

@@ -154,8 +154,65 @@ def assert_no_git_repo(conn, repo_dir: str, workspace_module: str) -> None:
         raise RuntimeError(
             f"Workspace '{workspace_module}' already has a git repository at {repo_dir}, and "
             "scaffolding would write workspace templates over it. Use workspaces.clone-repo to "
-            "bring an existing repository in, or workspaces.remove to start the workspace over."
+            "bring an existing repository in, workspaces.scaffold --over-existing to layer templates "
+            "onto the project that is there, or workspaces.remove to start the workspace over."
         )
+
+
+def assert_git_repo(conn, repo_dir: str, workspace_module: str) -> None:
+    """
+    Refuse to layer templates onto a home directory that is not a repository.
+
+    Writing over files that are already there is only reasonable because git can undo it, so a
+    project with no repository behind it has nothing to review or restore the result against.
+    """
+    result = conn.run(f"test -d {quote(repo_dir)}/.git", hide=True, warn=True)
+    if not result.ok:
+        raise RuntimeError(
+            f"Workspace '{workspace_module}' has no git repository at {repo_dir}, so there would be "
+            "no way back from writing templates over it. Scaffold without --over-existing to start a "
+            "project there, or bring one in with workspaces.clone-repo first."
+        )
+
+
+def assert_clean_worktree(conn, repo_dir: str, workspace_module: str) -> None:
+    """
+    Refuse to write templates over uncommitted work.
+
+    Untracked files are ignored on purpose: the workspace home is the repository root, so it always
+    holds .bashrc, .ssh and the rest of a home directory that the cloned repository knows nothing
+    about. What matters is tracked changes, because those are what the templates would overwrite,
+    and their absence is what makes everything this command writes readable as one diff.
+    """
+    result = conn.run(f"git -C {quote(repo_dir)} status --porcelain --untracked-files=no", hide=True, warn=True)
+    if not result.ok:
+        raise RuntimeError(
+            f"Could not read the git status of {repo_dir} in workspace '{workspace_module}':\n"
+            f"{command_output(result)}"
+        )
+
+    changes = result.stdout.strip()
+    if changes:
+        raise RuntimeError(
+            f"Workspace '{workspace_module}' has uncommitted changes in {repo_dir}, and workspace "
+            f"templates are written over whatever they cover:\n\n{changes}\n\n"
+            "Commit or stash them first, so that what this command writes is the whole diff."
+        )
+
+
+def list_tracked_files(conn, repo_dir: str, relative_paths: tuple[str, ...]) -> tuple[str, ...]:
+    """Which of these paths, relative to the repository root, git already has under version control."""
+    if not relative_paths:
+        return ()
+
+    paths = " ".join(quote(relative_path) for relative_path in relative_paths)
+    result = conn.run(f"git -C {quote(repo_dir)} ls-files -- {paths}", hide=True, warn=True)
+    if not result.ok:
+        raise RuntimeError(
+            f"Could not list the tracked files of {repo_dir}:\n{command_output(result)}"
+        )
+
+    return tuple(line.strip() for line in result.stdout.splitlines() if line.strip())
 
 
 def ensure_git_repo(conn, repo_dir: str, workspace_name: str, workspace_module: str) -> None:
