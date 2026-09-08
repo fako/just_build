@@ -35,6 +35,7 @@ x-n8n-core: &n8n_core
     - GENERIC_TIMEZONE=Europe/Amsterdam
     - WEBHOOK_URL=http://${INVOKE_N8N_HOST}/
     - N8N_EDITOR_BASE_URL=http://${INVOKE_N8N_HOST}/
+    - N8N_DIAGNOSTICS_ENABLED=false
     # No N8N_ENCRYPTION_KEY on purpose. n8n generates one on first boot and persists it in the volume
     # below, which both services share. It only encrypts credentials, and credentials are entered by
     # hand in the n8n UI and never stored by this repository, so there is nothing here for a key in
