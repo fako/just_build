@@ -480,4 +480,11 @@ def n8n(ctx: Context) -> None:
     print("  docker compose --profile control up -d management")
 
 
-namespace = Collection("install", environment, hosts_file, ssh, management_database, n8n)
+@task
+def daemon(ctx: Context) -> None:
+    """Enable Docker at boot and start the configured stack with automatic restarts (requires sudo)."""
+    script_path = _repository_root() / "services" / "daemon" / "install.sh"
+    ctx.run(f"bash {quote(str(script_path))}", pty=True, echo=True)
+
+
+namespace = Collection("install", environment, hosts_file, ssh, management_database, n8n, daemon)

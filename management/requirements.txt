@@ -1,5 +1,5 @@
 # Runtime
-psycopg[binary,pool]==3.2.3
+psycopg[binary,pool]==3.3.5
 pgvector==0.4.1
 uvicorn==0.37.0
 invoke==3.0.3

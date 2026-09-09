@@ -63,3 +63,45 @@ And run the following to setup the management database that stores workspace det
 ```bash
 invoke install.management-database
 ```
+
+## Start automatically at boot
+
+On a Linux host running systemd and system-wide Docker Engine, finish the initial setup
+(including the n8n database via `invoke install.n8n`) and then run:
+
+```bash
+invoke install.daemon
+```
+
+Install UFW first if needed: `sudo apt install ufw`.
+The command requests sudo to add the public-port UFW allowances and enable and start
+`docker.service` and `containerd.service` under Docker's `restart: always`.
+Compose runs as your current user, who must already have access to the system Docker socket.
+
+Other users logged into the same host can access the published ports on `127.0.0.1` without
+Docker permissions, subject to each application's authentication. Hostnames installed through
+`invoke install.hosts-file` are also system-wide. This does not enable remote access to loopback ports.
+
+### Public ports and UFW
+
+`install.daemon` calls `services/daemon/firewall.sh` to allow incoming TCP on host ports
+2222 (workspace SSH), 7000 (workspace HTTP), 5678 (n8n), 8000 (management), and 9998 (Tika) from any source.
+Rules are inserted before existing deny rules and repeated runs skip duplicates. Existing rules,
+default policies, and UFW's enabled/disabled state are preserved.
+
+Docker's published bridge ports normally bypass UFW's host input rules. These allowances do not
+make UFW an access-control boundary for Docker, and this script leaves Docker's forwarding rules
+intact. See [Docker's firewall documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
+
+To configure these rules independently, without starting or rebuilding containers:
+
+```bash
+bash services/daemon/firewall.sh
+```
+
+To also enable UFW, supply the actual **host SSH port** so its allowance is added first.
+For a host using the usual port 22:
+
+```bash
+bash services/daemon/firewall.sh --enable --ssh-port 22
+```

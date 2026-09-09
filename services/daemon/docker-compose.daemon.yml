@@ -1,0 +1,19 @@
+# Apply after the repository's docker-compose.yml. Docker owns restart behavior;
+# no user session or separate systemd unit is needed for the Compose stack.
+services:
+  postgres:
+    restart: always
+  redis:
+    restart: always
+  tika:
+    restart: always
+  n8n:
+    restart: always
+  n8n-worker:
+    restart: always
+  nginx:
+    restart: always
+  management:
+    restart: always
+  workspaces:
+    restart: always
