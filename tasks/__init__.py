@@ -14,6 +14,7 @@ from workspaces import cli as workspaces_cli
 from workspaces.cli import remote as remote_cli
 from workspaces.cli import runtimes as runtimes_cli
 from workspaces.cli import workflows as workflows_cli
+from services.whisperx import tasks as whisperx_cli
 
 namespace = Collection()
 namespace.add_collection(install.namespace)
@@ -22,3 +23,4 @@ namespace.add_collection(runtimes_cli.namespace)
 namespace.add_collection(workflows_cli.namespace)
 namespace.add_collection(remote_cli.namespace)
 namespace.add_collection(management_cli.namespace)
+namespace.add_collection(whisperx_cli.collection)
