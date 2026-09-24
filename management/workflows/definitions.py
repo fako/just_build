@@ -46,6 +46,25 @@ CREATE_FIELDS = ("name", "nodes", "connections", "settings", "pinData", "project
 # Exactly what PUT /workflows/{id} accepts. description is update-only.
 UPDATE_FIELDS = ("name", "nodes", "connections", "settings", "pinData", "description")
 
+# Exactly what the settings object inside either body accepts, as of n8nio/n8n:2.18.5 in
+# docker-compose.yml. It is closed as well, and the editor writes keys into it that the public API
+# refuses (binaryMode, timeSavedMode and whatever the next release adds), so an export copied out of
+# the UI fails on settings alone. Revisit this list when the image is bumped.
+SETTINGS_FIELDS = (
+    "saveExecutionProgress",
+    "saveManualExecutions",
+    "saveDataErrorExecution",
+    "saveDataSuccessExecution",
+    "executionTimeout",
+    "errorWorkflow",
+    "timezone",
+    "executionOrder",
+    "callerPolicy",
+    "callerIds",
+    "timeSavedPerExecution",
+    "availableInMCP",
+)
+
 # Without these a definition is not a workflow, whichever direction it came from.
 REQUIRED_FIELDS = ("name", "nodes", "connections")
 
@@ -111,7 +130,8 @@ def _build_body(definition: dict[str, Any], fields: tuple[str, ...]) -> dict[str
     body = {field: definition[field] for field in fields if field in definition}
     # settings is required by both schemas and n8n rejects a workflow without one, but a hand written
     # file routinely leaves it out. Defaulting is friendlier than a 400 relayed from n8n.
-    body.setdefault("settings", {})
+    settings = body.get("settings") or {}
+    body["settings"] = {field: settings[field] for field in SETTINGS_FIELDS if field in settings}
     return body
 
 

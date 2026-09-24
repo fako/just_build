@@ -3,7 +3,7 @@ import pytest
 from workflows.definitions import InvalidDefinition
 from workflows.models import Workflow, WorkflowTag
 from workflows.n8n import FakeN8nClient
-from workflows.services import TagOwnedElsewhere, UnknownWorkflowId, push, workspace_index
+from workflows.services import TagOwnedElsewhere, push, workspace_index
 
 
 pytestmark = pytest.mark.django_db
@@ -60,21 +60,37 @@ def test_retagging_replaces_the_tags_in_n8n(workspace, business_tag, n8n, defini
     assert n8n.workflows[existing.id].tag_names == {"invoices"}
 
 
-def test_another_workspace_id_is_refused_and_writes_nothing(workspace, other_workspace, n8n, definition):
+def test_another_workspace_id_never_reaches_their_workflow(workspace, other_workspace, n8n, definition):
     """The whole cross-workspace defence: an id is only usable once the tag index has resolved it."""
     WorkflowTag.objects.create(workspace=other_workspace, name="theirs", n8n_id=n8n.add_tag("theirs").id)
     theirs = n8n.add_workflow("Theirs", tags=["theirs"])
 
-    with pytest.raises(UnknownWorkflowId, match=theirs.id):
-        push(workspace, [definition(id=theirs.id)], client=FakeN8nClient())
+    results = push(workspace, [definition(id=theirs.id)], client=FakeN8nClient())
 
+    assert results[0].action == "created"
+    assert results[0].n8n_id != theirs.id
     assert n8n.workflows[theirs.id].name == "Theirs"
+    assert n8n.workflows[theirs.id].tag_names == {"theirs"}
     assert "update_workflow" not in [call[0] for call in n8n.calls]
 
 
-def test_an_unknown_id_is_refused(workspace, n8n, definition):
-    with pytest.raises(UnknownWorkflowId, match="wfGone"):
-        push(workspace, [definition(id="wfGone")], client=FakeN8nClient())
+def test_an_unknown_id_creates_a_new_workflow(workspace, n8n, definition):
+    results = push(workspace, [definition(id="wfGone")], client=FakeN8nClient())
+
+    assert results[0].action == "created"
+    assert results[0].n8n_id != "wfGone"
+    assert n8n.workflows[results[0].n8n_id].tag_names == {"business"}
+
+
+def test_an_unknown_id_still_updates_a_workflow_of_the_same_name(workspace, business_tag, n8n, definition):
+    """Pushing an import twice, before a sync has written the new ids back, must not duplicate it."""
+    business_tag.n8n_id = n8n.add_tag("business").id
+    business_tag.save(update_fields=["n8n_id", "modified_at"])
+    existing = n8n.add_workflow("Github invoices", tags=["business"])
+
+    results = push(workspace, [definition(id="wfGone")], client=FakeN8nClient())
+
+    assert [(result.n8n_id, result.action) for result in results] == [(existing.id, "updated")]
 
 
 def test_a_bad_definition_halfway_down_stops_the_whole_batch(workspace, n8n, definition):
@@ -96,17 +112,43 @@ def test_a_foreign_tag_stops_the_whole_batch(workspace, other_workspace, n8n, de
     assert n8n.workflows == {}
 
 
-def test_an_export_from_another_instance_is_refused(workspace, n8n, exported_workflow):
+def test_an_export_from_another_instance_is_imported_under_a_new_id(workspace, n8n, exported_workflow):
     """
-    A just_automate export cannot be pushed as it stands.
+    A just_automate export can be pushed as it stands.
 
-    It carries the id it had on the instance it came from, which is not reachable here, so it is
-    refused rather than silently written over whatever happens to hold that id.
+    It carries the id it had on the instance it came from. n8n will not take an id on create, so the
+    workflow lands under a fresh one, and a sync is what writes that back into the file.
     """
     exported_workflow["tags"] = ["business"]
 
-    with pytest.raises(UnknownWorkflowId, match=exported_workflow["id"]):
-        push(workspace, [exported_workflow], client=FakeN8nClient())
+    results = push(workspace, [exported_workflow], client=FakeN8nClient())
+
+    assert results[0].action == "created"
+    assert results[0].n8n_id != exported_workflow["id"]
+
+
+def test_a_batch_of_exports_imports_in_one_push(workspace, n8n, exported_workflow):
+    batch = [
+        {**exported_workflow, "id": f"foreign{index}", "name": f"Imported {index}", "tags": ["business"]}
+        for index in range(3)
+    ]
+
+    results = push(workspace, batch, client=FakeN8nClient())
+
+    assert [result.action for result in results] == ["created"] * 3
+    assert len({result.n8n_id for result in results}) == 3
+
+
+def test_settings_n8n_does_not_accept_are_dropped(workspace, n8n, definition):
+    """The editor writes settings the public API refuses, and one of them fails the whole call."""
+    settings = {"executionOrder": "v1", "availableInMCP": False, "binaryMode": "separate",
+                "timeSavedMode": "fixed"}
+
+    results = push(workspace, [definition(settings=settings)], client=FakeN8nClient())
+
+    assert n8n.workflows[results[0].n8n_id].definition["settings"] == {
+        "executionOrder": "v1", "availableInMCP": False,
+    }
 
 
 def test_credential_references_reach_n8n_untouched(workspace, n8n, exported_workflow):

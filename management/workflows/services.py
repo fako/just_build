@@ -43,10 +43,6 @@ class TagOwnedElsewhere(WorkflowServiceError):
     """A tag name this workspace asked for belongs to another workspace."""
 
 
-class UnknownWorkflowId(WorkflowServiceError):
-    """An id that is not among the workflows this workspace's tags cover."""
-
-
 @dataclass(frozen=True, slots=True)
 class PushResult:
     name: str
@@ -129,14 +125,22 @@ def workspace_index(workspace: Workspace, client: N8nClient) -> dict[str, N8nWor
     }
 
 
-def push(workspace: Workspace, definitions: list[dict[str, Any]], *, client: N8nClient | None = None,
-         allow_recreate: bool = False) -> list[PushResult]:
+def push(workspace: Workspace, definitions: list[dict[str, Any]], *,
+         client: N8nClient | None = None) -> list[PushResult]:
     """
     Write definitions to n8n. Stores no workflows, only the tags they claimed.
 
     Everything that can be refused is refused before the first write, so a batch either lands or does
     not. Half a batch would leave the workspace's files describing a state that no longer exists in
     either direction.
+
+    An id is a pointer into the tag index and nothing more. One that the index does not hold falls
+    through to a name match and then to a create, which is what makes a batch exported from another
+    n8n importable as it stands: n8n's public API treats `id` as read only, so the old ids cannot be
+    kept, and a sync writes the new ones back over them. It is also why a foreign id is harmless. It
+    is never looked up outside the index, so it can only ever produce a new workflow of this
+    workspace's own, and does so exactly as a nonexistent id would, confirming nothing about what else
+    is there.
     """
     client = client or get_n8n_client()
 
@@ -148,20 +152,6 @@ def push(workspace: Workspace, definitions: list[dict[str, Any]], *, client: N8n
 
     index_by_id = workspace_index(workspace, client)
     index_by_name = {workflow.name: workflow for workflow in index_by_id.values()}
-
-    if not allow_recreate:
-        unknown = [
-            definition["id"] for definition in definitions
-            if definition.get("id") and definition["id"] not in index_by_id
-        ]
-        if unknown:
-            # The id either does not exist or is another workspace's. Both are refused, and refused
-            # identically: distinguishing them would confirm that someone else's workflow is there.
-            raise UnknownWorkflowId(
-                f"No workflow with id {', '.join(sorted(unknown))} is reachable through this "
-                "workspace's tags. Run 'invoke n8n.pull' to see what is actually there, or remove the "
-                "'id' field to create a new workflow."
-            )
 
     results: list[PushResult] = []
     for definition in definitions:
@@ -267,8 +257,8 @@ def repush(workspaces: Iterable[Workspace], *, client: N8nClient | None = None) 
     """
     Rebuild n8n from the mirror, for as many workspaces as asked.
 
-    The recovery path after n8n has lost its data: stored ids no longer resolve, so recreation is
-    allowed here and the fresh ids are written back onto the rows. That write-back is the one thing
+    The recovery path after n8n has lost its data: stored ids no longer resolve, so push recreates
+    them and the fresh ids are written back onto the rows. That write-back is the one thing
     push otherwise never does, which is why this is a separate control-only operation rather than a
     flag on push that a workspace could reach.
     """
@@ -279,7 +269,7 @@ def repush(workspaces: Iterable[Workspace], *, client: N8nClient | None = None) 
         definitions = stored_definitions(workspace)
         if not definitions:
             continue
-        pushed = push(workspace, definitions, client=client, allow_recreate=True)
+        pushed = push(workspace, definitions, client=client)
         _write_back_ids(workspace, pushed)
         results[workspace.module] = pushed
     return results
@@ -298,7 +288,6 @@ __all__ = [
     "InvalidDefinition",
     "PushResult",
     "TagOwnedElsewhere",
-    "UnknownWorkflowId",
     "WorkflowServiceError",
     "ensure_tags",
     "pull",

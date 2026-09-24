@@ -40,8 +40,15 @@ workspace already holds comes back as an error naming the owner, and there is no
 renamed workflow is renamed in n8n; without it, a renamed workflow becomes a second workflow. Do not
 invent one, and do not copy a file's id onto another file.
 
-A workflow exported from a different n8n carries that instance's id, which will not resolve here.
-Delete the `id` field before the first push and let sync write the real one back.
+Workflows exported from a different n8n can be dropped into the directory as they are, as many at a
+time as you like. Their ids will not resolve here and n8n does not let anyone choose an id, so each
+one is created under a new id, and `invoke n8n.sync` writes that id back into the file. Use sync
+rather than push for an import, or the files keep the old ids. Settings this n8n does not accept are
+dropped on the way in.
+
+Other workflows are referenced by id too, for instance in Execute Workflow nodes, `errorWorkflow` and
+`callerIds`. Those references still hold the old instance's ids after an import and need fixing by
+hand.
 
 ### State and credentials are not yours to keep
 

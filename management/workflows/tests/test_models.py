@@ -86,6 +86,13 @@ def test_missing_settings_is_defaulted(definition):
     assert body["settings"] == {}
 
 
+def test_settings_are_an_allowlist_on_both_bodies(definition):
+    settings = {"executionOrder": "v1", "timezone": "Europe/Amsterdam", "binaryMode": "separate"}
+    for body in (build_create_body(definition(settings=settings), "project-1"),
+                 build_update_body(definition(settings=settings))):
+        assert body["settings"] == {"executionOrder": "v1", "timezone": "Europe/Amsterdam"}
+
+
 def test_tags_are_deduplicated_in_order(definition):
     assert definition_tags(definition(tags=["b", "a", "b"])) == ["b", "a"]
 

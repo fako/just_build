@@ -30,7 +30,7 @@ import requests
 from django.conf import settings
 from django.utils.module_loading import import_string
 
-from workflows.definitions import CREATE_FIELDS, UPDATE_FIELDS, sanitize_definition
+from workflows.definitions import CREATE_FIELDS, SETTINGS_FIELDS, UPDATE_FIELDS, sanitize_definition
 
 
 PAGE_SIZE = 250
@@ -301,9 +301,10 @@ class FakeN8nClient:
     """
     Test double. Selected by pointing the N8N_CLIENT setting at this class.
 
-    It enforces the two rules that actually bite in production: a write body may only carry the keys
-    n8n's closed schema accepts, and a duplicate tag name is a conflict. Without those a leaked `id`
-    or `active` would sail through every test here and fail on the first real push.
+    It enforces the two rules that actually bite in production: a write body, and the settings inside
+    it, may only carry the keys n8n's closed schema accepts, and a duplicate tag name is a conflict.
+    Without those a leaked `id` or `active` would sail through every test here and fail on the first
+    real push.
     """
 
     def __init__(self, state: FakeN8nState | None = None) -> None:
@@ -316,10 +317,15 @@ class FakeN8nClient:
             raise error
 
     def _assert_allowed(self, body: dict[str, Any], allowed: tuple[str, ...]) -> None:
-        rejected = sorted(set(body) - set(allowed))
+        self._assert_closed("request/body", body, allowed)
+        # Closed one level down as well, which is the one a pasted UI export trips over.
+        self._assert_closed("request/body/settings", body.get("settings") or {}, SETTINGS_FIELDS)
+
+    def _assert_closed(self, path: str, value: dict[str, Any], allowed: tuple[str, ...]) -> None:
+        rejected = sorted(set(value) - set(allowed))
         if rejected:
             raise N8nRejected(
-                f"n8n refused the request with HTTP 400: request/body must NOT have additional "
+                f"n8n refused the request with HTTP 400: {path} must NOT have additional "
                 f"properties: {', '.join(rejected)}"
             )
 

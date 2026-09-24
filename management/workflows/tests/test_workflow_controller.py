@@ -71,10 +71,14 @@ def test_a_foreign_tag_is_a_409(workspace, other_workspace, workspace_client, n8
     assert "just_automate" in response.json()["detail"]
 
 
-def test_an_unreachable_id_is_a_409(workspace, workspace_client, n8n, definition):
-    response = post(workspace_client(workspace), "push/", {"workflows": [definition(id="wfGone")]})
+def test_sync_hands_back_the_new_id_for_an_unreachable_one(workspace, workspace_client, n8n, definition):
+    """What lets a workspace import another n8n's export: the file gets the id n8n actually gave it."""
+    response = post(workspace_client(workspace), "sync/", {"workflows": [definition(id="wfGone")]})
 
-    assert response.status_code == 409
+    assert response.status_code == 200
+    body = response.json()
+    assert body["pushed"][0]["action"] == "created"
+    assert body["workflows"][0]["n8n_id"] == body["pushed"][0]["n8n_id"] != "wfGone"
 
 
 def test_n8n_being_down_is_a_502(workspace, workspace_client, n8n, definition):

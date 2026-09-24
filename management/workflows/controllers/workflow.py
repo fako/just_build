@@ -33,7 +33,6 @@ from workflows.n8n import (
 )
 from workflows.services import (
     TagOwnedElsewhere,
-    UnknownWorkflowId,
     ensure_tags,
     pull,
     push,
@@ -135,8 +134,6 @@ def translate_errors(exc: Exception) -> HttpError:
         return HttpError(422, str(exc))
     if isinstance(exc, TagOwnedElsewhere):
         return HttpError(409, str(exc))
-    if isinstance(exc, UnknownWorkflowId):
-        return HttpError(409, str(exc))
     if isinstance(exc, N8nRejected):
         return HttpError(422, str(exc))
     if isinstance(exc, N8nConflict):
@@ -165,7 +162,7 @@ def push_workflows(request: HttpRequest, data: PushSchema) -> list:
     workspace = resolve_workspace(request, data.workspace_module)
     try:
         return push(workspace, data.workflows)
-    except (InvalidDefinition, TagOwnedElsewhere, UnknownWorkflowId, N8nError) as exc:
+    except (InvalidDefinition, TagOwnedElsewhere, N8nError) as exc:
         raise translate_errors(exc) from exc
 
 
@@ -184,7 +181,7 @@ def sync_workflows(request: HttpRequest, data: PushSchema) -> dict:
     workspace = resolve_workspace(request, data.workspace_module)
     try:
         pushed, workflows = sync(workspace, data.workflows)
-    except (InvalidDefinition, TagOwnedElsewhere, UnknownWorkflowId, N8nError) as exc:
+    except (InvalidDefinition, TagOwnedElsewhere, N8nError) as exc:
         raise translate_errors(exc) from exc
     return {"pushed": pushed, "workflows": workflows}
 
