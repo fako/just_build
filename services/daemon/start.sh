@@ -7,4 +7,4 @@ docker compose \
   --file docker-compose.yml \
   --file services/daemon/docker-compose.daemon.yml \
   --profile workspaces \
-  up -d --wait
+  up -d --build --wait
