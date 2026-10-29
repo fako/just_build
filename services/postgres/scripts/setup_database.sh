@@ -89,6 +89,11 @@ else
     "CREATE ROLE \"$DATABASE_USER\" LOGIN CREATEDB PASSWORD '$DATABASE_PASSWORD';"
 fi
 
+# Roles create databases of their own with CREATEDB, test runners most of all, and those are copied
+# from template1. vector is not a trusted extension, so they cannot install it themselves; having it
+# in the template is what gives them a database their migrations can run in.
+install_vector_extension template1
+
 psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
   "CREATE DATABASE \"$DATABASE_NAME\" OWNER \"$DATABASE_USER\";"
 
