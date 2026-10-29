@@ -65,10 +65,12 @@ invoke workspaces.create --name="My Workspace" --module=my_workspace
 # Scaffold a new Django project and the workspace templates over SSH as the workspace user
 invoke workspaces.scaffold --workspace-module=my_workspace
 
-# Add the web runtime, install what it needs, and start it
-invoke runtimes.add --workspace-module=my_workspace --type=django --name=web
+# Add the web runtime as the one that answers to my-workspace.localhost, install what it needs, and start it
+invoke runtimes.add --workspace-module=my_workspace --type=django --name=web --primary
 invoke runtimes.install --workspace-module=my_workspace --name=web
 invoke runtimes.enable --workspace-module=my_workspace --name=web
+
+# It is now served through nginx at http://my-workspace.localhost:7000/
 ```
 
 Starting from an existing repository instead of a scaffold replaces one step. Add the workspace's
@@ -106,7 +108,7 @@ invoke runtimes.enable --workspace-module=my_workspace --name=worker
 
 The module is the canonical workspace identifier and is used for Linux users, home directories, databases, SSH, and
 supervisor. Its URL-safe slug is generated automatically with underscores converted to hyphens, so `my_workspace`
-uses `my-workspace.localhost` by default.
+has the slug `my-workspace`. See [Hostnames](#hostnames) for the names its runtimes answer to.
 
 The workspace home and secrets directory are owned by the workspace user inside the container and are not
 reachable from the host filesystem. Reach them over SSH as the workspace user, or with
@@ -180,7 +182,7 @@ For the common SSH-first workflow, use:
 ```bash
 invoke workspaces.create --name="My Workspace" --module=my_workspace
 invoke workspaces.scaffold --workspace-module=my_workspace
-invoke runtimes.add --workspace-module=my_workspace --type=django --name=web
+invoke runtimes.add --workspace-module=my_workspace --type=django --name=web --primary
 invoke runtimes.install --workspace-module=my_workspace --name=web
 invoke runtimes.enable --workspace-module=my_workspace --name=web
 ```
@@ -194,7 +196,8 @@ The commands do the following:
   home directory, using the workspace's own key
 - `workspaces.scaffold --over-existing` applies templates to a project that is already there, cloned or scaffolded
   earlier, and leaves the result uncommitted for review
-- `runtimes.add` records the runtime in management and allocates its port
+- `runtimes.add` records the runtime in management and allocates its port; `--primary` gives it the workspace's
+  bare name, `my-workspace.localhost`
 - `runtimes.install` runs what the runtime type needs inside the workspace, which is what makes it enableable
 - `runtimes.enable` writes its configuration and starts it under supervisord
 - `workspaces.remove` removes the workspace repository, secrets, SSH keys and authorization, runtimes and
@@ -404,7 +407,7 @@ A workspace runs nothing until it has runtimes. Management renders their configu
 writes it.
 
 ```bash
-invoke runtimes.add --workspace-module=my_workspace --type=django --name=web
+invoke runtimes.add --workspace-module=my_workspace --type=django --name=web --primary
 invoke runtimes.add --workspace-module=my_workspace --type=celery --name=worker \
     --configuration='{"concurrency": 4}'
 invoke runtimes.install --workspace-module=my_workspace --name=web
@@ -445,8 +448,37 @@ a broken ini file:
 
 ```bash
 invoke runtimes.configure --workspace-module=my_workspace --name=web \
-    --configuration='{"workers": 4, "domain": "my-workspace.localhost"}'
+    --configuration='{"workers": 4, "domains": ["my-workspace.example.com"]}'
+invoke runtimes.apply
 ```
+
+`runtimes.configure` only changes the record in management; `runtimes.apply` puts the change on disk.
+
+#### Hostnames
+
+Every HTTP runtime is served by the workspaces container's nginx on port 7000. Which names reach it
+depends on the runtime:
+
+| Name | Answers when |
+| --- | --- |
+| `<slug>.<runtime>.localhost`, e.g. `my-workspace.web.localhost` | Always |
+| `<slug>.localhost`, e.g. `my-workspace.localhost` | The runtime is the workspace's primary runtime |
+| `localhost:7000/r/<slug>/<runtime>/` | Always; the path-based entrance meant for other containers |
+| Anything listed in `domains` | Always, once something makes the name resolve |
+
+The bare `<slug>.localhost` belongs to at most one runtime per workspace and nothing claims it
+automatically. Give it to a runtime when adding it with `--primary`, or afterwards:
+
+```bash
+invoke runtimes.configure --workspace-module=my_workspace --name=web --primary
+invoke runtimes.apply
+```
+
+The `subdomain` setting replaces the slug in that bare name, so `{"subdomain": "app"}` makes the
+primary runtime answer to `app.localhost`.
+
+The nginx container on port 80 is not involved: it only serves the service hostnames, such as
+`n8n.localhost`.
 
 ### 6. Adopting a workspace from before runtimes
 
@@ -463,9 +495,11 @@ invoke runtimes.adopt --workspace-module=my_workspace
 Add entries to `/etc/hosts` for local development:
 
 ```
-127.0.0.1 myproject.localhost
-127.0.0.1 another-project.localhost
+127.0.0.1 myproject.localhost myproject.web.localhost
+127.0.0.1 another-project.localhost another-project.web.localhost
 ```
+
+Most browsers and curl already resolve `*.localhost` to loopback without either.
 
 Or use dnsmasq to route all `*.localhost` to 127.0.0.1.
 
@@ -585,6 +619,12 @@ Management allocates the lowest free port at or above 8001 when a runtime is add
 nothing needs to be tracked by hand. `invoke runtimes.list` shows which runtime holds which port.
 
 ## Troubleshooting
+
+### 404 Workspace not found
+
+nginx has no server block for the name you used. Most often that is `<slug>.localhost` for a
+workspace without a primary runtime; try `<slug>.web.localhost:7000`, or see [Hostnames](#hostnames).
+The rendered names are on the `server_name` line in `workspaces/src/nginx/<module>/<runtime>.conf`.
 
 ### 502 Bad Gateway
 
