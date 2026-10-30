@@ -17,13 +17,14 @@ from workspaces.cli.client import WorkspaceRecord
 
 WORKSPACE_KEY_COMMENT_DOMAIN = "workspace.local"
 # Accepting a remote host key on first contact. The alternative is an interactive prompt in the
-# middle of a fetch, which is no more of a verification than this is.
+# middle of a fetch, which is no more of a verification than this is. ConnectTimeout turns a remote
+# that never answers into a failure instead of a fetch that waits forever.
 #
 # Nothing in this module passes env= to conn.run, and nothing should. Fabric cannot set an
 # environment variable over SSH, so it prefixes the command with `export NAME=value` built by string
 # formatting, with no escaping: a value holding a space ends the assignment, and one holding ';'
 # runs what follows it. Quote values into the command instead, or answer a prompt for them.
-GIT_SSH_COMMAND = "ssh -o StrictHostKeyChecking=accept-new"
+GIT_SSH_COMMAND = "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
 # What a git remote says when it does not accept the workspace key. Anything matching means the key
 # is the thing to fix, so the failure is reported with the key to install rather than as raw output.
 AUTHENTICATION_MARKERS = (

@@ -117,7 +117,7 @@ def test_fetch_origin_passes_no_environment_to_the_remote_shell() -> None:
     fetch_call = next(call for call in conn.calls if "git fetch" in str(call["command"]))
     # Nothing in this module may use env= over SSH, whatever the value is.
     assert fetch_call["env"] is None
-    assert "GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new'" in str(fetch_call["command"])
+    assert "GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15'" in str(fetch_call["command"])
 
 
 def test_ensure_workspace_git_key_generates_the_key_with_the_password_out_of_the_command() -> None:
