@@ -4,49 +4,49 @@ overview: Give every installation a daily, self-pruning backup of its PostgreSQL
 todos:
   - id: config-and-layout
     content: Add the backups section to invoke.yml and .env.example (system name, root, schedule, retention, staleness), and a storage module that owns the on-disk layout, the manifest, atomic `.partial` renames and the root lock.
-    status: pending
+    status: completed
   - id: retention
     content: Write the retention rule as a pure function (last 14 days, earliest backup of each calendar month, plus the newest own backup) and `backups.prune` with `--dry-run` on top of it. Held systems keep 12 months of monthlies, the own system keeps them until cleaned.
-    status: pending
+    status: completed
   - id: clean
     content: Add `backups.clean`, a manual task that deletes backups older than a year by default or before a fixed `--before` date, with `--system`, `--dry-run` and a confirmation prompt, never touching the newest own backup.
-    status: pending
+    status: completed
   - id: create
     content: Add `backups.create`, which dumps globals and every non-template, non-test database through `docker compose exec -T postgres`, writes a checksummed manifest and renames the directory into place.
-    status: pending
+    status: completed
   - id: restore
     content: Add `backups.restore` for the own system only, with checksum verification, a confirmation prompt, a pre-restore safety backup, stopping and restarting consumers, and `--database` for a single database.
-    status: pending
+    status: completed
   - id: registry
     content: Add `backups.register` and `backups.unregister`, which maintain `<root>/remotes.yml` with an SSH alias and a pull or push direction per system, checking reachability with an rsync listing because the remote key allows nothing else.
-    status: pending
+    status: completed
   - id: authorize
     content: Add `backups.authorize`, which writes a `restrict`ed, rrsync-forced line into `~/.ssh/authorized_keys` - read-only to the own system's directory by default, write-only into the sender's directory with `--push` - idempotent per name, with `--revoke`.
-    status: pending
+    status: completed
   - id: pull
     content: Add `backups.pull`, rsync over SSH with the read-only job key from whatever directory the source's rrsync exposes, `--ignore-existing` and without --delete, skipping partials, verifying manifests and their system on arrival, with `--system` for disaster recovery.
-    status: pending
+    status: completed
   - id: push
     content: Add `backups.push`, a manual-only rsync of the own directory to push targets through their own SSH alias and a user-supplied, passphrase-protected key, refusing the read-only job key, recording the last pushed backup per target under `<root>/.state/`.
-    status: pending
+    status: completed
   - id: status
     content: Add `backups.status`, which reads only local files and prints the latest backup per system, own first, then registered remotes, then unregistered held systems, flagging stale and corrupt ones. `--system` lists every backup of one system.
-    status: pending
+    status: completed
   - id: run
     content: Add `backups.run`, the composite the timer calls - create, pull, prune, never push - which carries on past a failing remote and exits non-zero if anything failed.
-    status: pending
+    status: completed
   - id: install
     content: Add `install.backups` with a services/backups/install.sh that checks its prerequisites (rrsync included), generates the passphrase-less read-only job key, writes and enables a systemd service and timer for `backups.run`, and supports `--schedule` and `--uninstall`.
-    status: pending
+    status: completed
   - id: tests
     content: Cover retention, manifest verification, status grouping, the registry and authorized_keys lines with plain pytest, and create/restore/pull/push command construction with a recording context.
-    status: pending
+    status: completed
   - id: docs-installation
     content: Add a short Backups section to INSTALLATION.md - set the system name, run `invoke install.backups`, link to BACKUPS.md.
-    status: pending
+    status: completed
   - id: docs-backups
     content: Write BACKUPS.md - concepts and topology, the retention rule, layout, per-machine setup for A/B/C, the read-only job key and passphrase-protected push keys with rrsync restrictions, command reference, scheduling, restore and disaster-recovery recipes, what is not backed up, troubleshooting.
-    status: pending
+    status: completed
 isProject: true
 ---
 
@@ -277,10 +277,10 @@ comment `just-build-backups:<name>` so rerunning replaces it and `--revoke` remo
 
 ```
 # read-only, the default: <name> may read this machine's own backups
-restrict,command="rrsync -ro <root>/<own>" ssh-ed25519 AAAA... just-build-backups:a
+restrict,command="rrsync -ro <root>/<own>" ssh-ed25519 AAAA... just-build-backups:a:read:<own>
 
 # --push: <name> may write into its own directory here, and read nothing
-restrict,command="rrsync -wo <root>/<name>" ssh-ed25519 AAAA... just-build-backups:c
+restrict,command="rrsync -wo -no-del -munge <root>/<name>" ssh-ed25519 AAAA... just-build-backups:c:push:c
 ```
 
 `--system` exposes a different directory read-only, which is only for disaster recovery: A runs
@@ -293,7 +293,8 @@ authorize creates `<root>/<name>/` so the sender has somewhere to write.
 Without arguments, pulls every `direction: pull` remote. For each:
 
 ```
-rsync -a --ignore-existing --exclude '*.partial' -e 'ssh -o BatchMode=yes' <host>:./ <root>/<system>/
+rsync -a --ignore-existing --delay-updates --exclude '*.partial' --exclude '*.corrupt' \
+    -e 'ssh -o BatchMode=yes' <host>:./ <root>/<system>/
 ```
 
 `<host>:./` is whatever directory the source's rrsync line exposes to this key, which by default is
@@ -318,7 +319,7 @@ its own backups back.
 Manual only. Without arguments, pushes to every `direction: push` remote:
 
 ```
-rsync -a --ignore-existing --exclude '*.partial' <root>/<own>/ <host>:./
+rsync -a --ignore-existing --delay-updates --exclude '*.partial' --exclude '*.corrupt' <root>/<own>/ <host>:./
 ```
 
 There is no `BatchMode` here on purpose: the push alias points at a key the user made, with a
@@ -433,7 +434,7 @@ Two kinds of key, with a hard line between them:
 | made by | `install.backups`, as `~/.ssh/just_build_backups` | the user, wherever they like |
 | passphrase | none, so the timer can use it | expected; push warns without one |
 | used by | `pull`, `register`'s check, the timer | `push`, run by hand |
-| allowed on the other side | `rrsync -ro <root>/<own>`: read one directory | `rrsync -wo <root>/<sender>`: write one directory |
+| allowed on the other side | `rrsync -ro <root>/<own>`: read one directory | `rrsync -wo -no-del -munge <root>/<sender>`: write one directory |
 | SSH alias | `just-build-<name>` | `just-build-<name>-push` |
 
 **Yes, SSH can scope a key to one directory, read-only.** OpenSSH's `command="..."` in
@@ -446,7 +447,7 @@ stolen job key can therefore do exactly one thing: read the backups of the one s
 authorized for, which the machine the key was taken from already held a copy of. It cannot delete, overwrite, add,
 look elsewhere on the disk, or reach anything over the network.
 
-The push key gets the mirror image, `rrsync -wo`: it can write into the sender's directory on the
+The push key gets the mirror image, `rrsync -wo -no-del -munge`: it can write into the sender's directory on the
 receiver and cannot read anything, including the receiver's own backups or what it holds for others.
 Since nothing ever runs with `--delete` and both directions use `--ignore-existing`, neither key can
 destroy or alter a backup the other side already has.
@@ -526,3 +527,35 @@ Settled before implementation:
 6. **Unattended means read-only.** The passphrase-less job key is only ever authorized with
    `rrsync -ro` on one directory, and only pulls run on the timer. Writing to another machine is a
    manual push with a separate, user-supplied key that is expected to have a passphrase.
+
+## Implementation Notes
+
+Where the build ended up differing from, or adding to, the plan above:
+
+- Push lines carry `-no-del -munge` on top of `-wo`. Verified against rrsync 3.2.7: without `-no-del` a
+  pusher's own client could still send `--delete` into its directory on the receiver.
+- Transfers use `--delay-updates`, so a pull or push that is cut short leaves directories without a
+  manifest, which nothing counts, rather than complete looking backups with files missing. Pull reads
+  `--out-format=%n` to know which backups arrived and verifies exactly those.
+- Restore creates databases from `template0`, so they are exactly what the dump describes, rather than
+  inheriting the vector extension `setup_database.sh` installs into `template1`.
+- Code lives in `services/backups/`: `storage.py`, `retention.py`, `remotes.py`, `access.py`,
+  `transport.py`, `postgres.py`, `status.py` and `tasks.py`, with tests under `tests/` run by
+  `invoke backups.test`. `PyYAML` became an explicit requirement for `remotes.yml`.
+- Verified end to end: create and restore (full and `--database`) against a throwaway pgvector
+  project, including role passwords and vector columns; pull, push and the register check through real
+  `rrsync` with a stand-in for ssh, including the refusals (writing or deleting with a read key, reading
+  or deleting with a push key, escaping the directory); `backups.create` against the live stack through
+  the CLI with a bare environment like systemd's; rendered units with `systemd-analyze verify`.
+  `install.backups` itself was not run, because it installs system units with sudo.
+- The default root became `<repository>/backups/`, ignored by git, instead of `~/backups/just_build`,
+  and `.env.example` does not propose `INVOKE_BACKUPS_ROOT`; `backups.root` remains overridable. Other
+  machines never need the repository's location, because the rrsync line `backups.authorize` writes on
+  each machine carries its own absolute path. Moving the repository means rerunning that machine's
+  `backups.authorize` commands and `install.backups`.
+- Most machines are not on at 03:00, so the timer became hourly plus ten minutes after boot, and
+  `backups.schedule` became `backups.daily_at` (03:00 local). A check backs up only when the own system
+  has no backup since the most recent 03:00, so always-on machines still back up at 03:00 and others at
+  their first check after; every check pulls. A stack that is not up or a remote that is off (ssh exit
+  255, with a 20 second connect timeout) is skipped until the next check rather than failing the run.
+  The staggered per-machine schedules are gone, and `install.backups --schedule` with them.

@@ -42,3 +42,23 @@ management:
     - username: fako
       email: email@fakoberkers.nl
       password: null
+
+backups:
+  # Name of this machine among the systems that exchange backups. Lowercase letters, digits and
+  # dashes, unique across every machine that holds or sends backups. Set in .env.
+  system: null
+  # Where this machine keeps its own backups and the ones it holds for others. Empty means the
+  # backups directory in this repository, which git ignores.
+  root: null
+  # Local time a backup day starts. The timer checks every hour; a machine that is on at this time backs
+  # up then, one that is not backs up at its first check after. See BACKUPS.md.
+  daily_at: "03:00"
+  retention:
+    # Every backup younger than this is kept.
+    days: 14
+    # Months of monthly backups kept for held systems. The own system keeps them until backups.clean.
+    remote_months: 12
+    # Default age cutoff for backups.clean, overridden per run with --before.
+    clean_after_days: 365
+  # backups.status flags a system whose newest backup is older than this.
+  stale_after_hours: 36

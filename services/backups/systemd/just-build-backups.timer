@@ -1,0 +1,15 @@
+# Rendered by services/backups/install.sh. Edit the template, then rerun invoke install.backups.
+[Unit]
+Description=Hourly check for Just Build database backups
+
+[Timer]
+# Check every hour, and once soon after boot when the stack has had time to come up. backups.run
+# decides whether a backup is due; most checks only pull and prune.
+OnCalendar=hourly
+OnBootSec=10min
+# Check straight away after a suspend or shutdown that swallowed a scheduled check.
+Persistent=true
+RandomizedDelaySec=2m
+
+[Install]
+WantedBy=timers.target

@@ -7,7 +7,7 @@ Following this readme will setup the environment, but doesn't setup any agents.
 
 ## Prerequisites
 
-This project uses `Python 3.12`, `Docker`, `Docker Compose V2`, `pass` and `psql`.
+This project uses `Python 3.12`, `Docker`, `Docker Compose V2`, `pass`, `psql` and  rsync`.
 Make sure they are installed on your system before installing the project.
 
 
@@ -119,6 +119,30 @@ For a host using the usual port 22:
 ```bash
 bash services/daemon/firewall.sh --enable --ssh-port 22
 ```
+
+## Backups
+
+Every installation should back up its databases. Give the machine a name among the machines that
+exchange backups (lowercase letters, digits and dashes; each machine needs its own), then install the
+daily timer. Install `rsync` first if needed (`sudo apt install rsync`); version 3.2.4 or later,
+which ships `rrsync`.
+
+```bash
+invoke install.environment --missing     # adds INVOKE_BACKUPS_SYSTEM to .env
+# set INVOKE_BACKUPS_SYSTEM in .env, then:
+source activate.sh
+invoke install.backups
+```
+
+This requests sudo to install a systemd timer that dumps every database once a day: at 03:00 when the
+machine is on then, otherwise soon after it comes on. It keeps the last 14 days plus the first backup of
+each month, and makes a first backup straight away. Backups go to the
+`backups` directory of this repository, which git ignores. `invoke backups.status` shows what is
+there.
+
+Restoring, keeping copies of other machines, the SSH keys involved, and everything else is in
+[BACKUPS.md](BACKUPS.md).
+
 
 ## n8n
 

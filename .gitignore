@@ -6,6 +6,9 @@
 .env
 workspaces/src/secrets/
 
+# Backups related files
+/backups/
+
 #######################
 # Python
 #######################

@@ -15,6 +15,7 @@ from invoke.exceptions import Exit
 from invoke.tasks import task
 from invoke.watchers import Responder, FailingResponder
 
+from services.backups.storage import BackupError, backup_root, validate_system_name
 from workspaces.cli.common import ensure_ssh_host_keys
 from workspaces.cli.constants import SSH_CONFIG_PATH
 
@@ -487,4 +488,37 @@ def daemon(ctx: Context) -> None:
     ctx.run(f"bash {quote(str(script_path))}", pty=True, echo=True)
 
 
-namespace = Collection("install", environment, hosts_file, ssh, management_database, n8n, daemon)
+@task(name="backups", help={
+    "uninstall": "Disables and removes the timer and service, leaving every backup in place",
+})
+def backups_timer(ctx: Context, uninstall: bool = False) -> None:
+    """
+    Install an hourly systemd timer that backs this machine up once a day and pulls registered systems.
+
+    Requires sudo. Also generates the passphrase-less job key the timer pulls with, which other
+    machines only ever authorize to read. See BACKUPS.md for connecting machines to each other.
+    """
+    script_path = _repository_root() / "services" / "backups" / "install.sh"
+    if uninstall:
+        ctx.run(f"bash {quote(str(script_path))} --uninstall", pty=True, echo=True)
+        return
+
+    try:
+        system = validate_system_name(ctx.config.backups.system)
+    except BackupError as exc:
+        raise Exit(
+            f"INVOKE_BACKUPS_SYSTEM is not set to a usable name. {exc}\n"
+            "Run 'invoke install.environment --missing', set it in .env, then 'source activate.sh'."
+        ) from exc
+    ctx.run(
+        f"bash {quote(str(script_path))}",
+        env={
+            "BACKUPS_SYSTEM": system,
+            "BACKUPS_ROOT": str(backup_root(ctx.config.backups.root)),
+        },
+        pty=True,
+        echo=True,
+    )
+
+
+namespace = Collection("install", environment, hosts_file, ssh, management_database, n8n, daemon, backups_timer)
