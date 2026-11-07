@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from services.backups.remotes import Direction, Remote
+from services.backups.remotes import Remote
 from services.backups.retention import Policy, Reason, retention_reasons
 from services.backups.storage import (
     CORRUPT_SUFFIX,
@@ -18,7 +18,6 @@ from services.backups.storage import (
     directory_size,
     list_backups,
     list_suffixed,
-    read_push_state,
     system_names,
 )
 
@@ -35,14 +34,6 @@ class SystemStatus:
     @property
     def latest(self) -> Backup | None:
         return self.backups[-1] if self.backups else None
-
-
-@dataclass
-class PushStatus:
-    remote: str
-    backup: str | None
-    at: str | None
-    notes: list[str] = field(default_factory=list)
 
 
 def format_age(age: timedelta) -> str:
@@ -68,9 +59,8 @@ def format_time(moment: datetime) -> str:
 
 
 def system_order(root: Path, own_system: str, remotes: dict[str, Remote]) -> list[tuple[str, str]]:
-    """Own system first, then the registered pull remotes by name, then whatever else the root holds."""
-    pulled = [name for name, remote in remotes.items() if remote.direction is Direction.PULL]
-    order = [(own_system, "own"), *((name, "pull") for name in sorted(pulled))]
+    """Own system first, then the registered systems by name, then whatever else the root holds."""
+    order = [(own_system, "own"), *((name, "pull") for name in sorted(remotes))]
     listed = {name for name, _ in order}
     order.extend((name, "unregistered") for name in system_names(root) if name not in listed)
     return order
@@ -97,30 +87,13 @@ def system_status(root: Path, system: str, source: str, now: datetime, policy: P
     return status
 
 
-def push_status(root: Path, own_system: str, remotes: dict[str, Remote]) -> list[PushStatus]:
-    own_backups = list_backups(root, own_system)
-    newest = own_backups[-1].id if own_backups else None
-    rows = []
-    for name, remote in sorted(remotes.items()):
-        if remote.direction is not Direction.PUSH:
-            continue
-        state = read_push_state(root, name) or {}
-        row = PushStatus(remote=name, backup=state.get("backup"), at=state.get("at"))
-        if row.backup is None:
-            row.notes.append("never pushed")
-        elif newest and row.backup < newest:
-            row.notes.append("behind")
-        rows.append(row)
-    return rows
-
-
 def render_table(header: list[str], rows: list[list[str]]) -> str:
     widths = [max(len(row[index]) for row in [header, *rows]) for index in range(len(header))]
     lines = ["  ".join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip() for row in [header, *rows]]
     return "\n".join(lines)
 
 
-def render_overview(systems: list[SystemStatus], pushes: list[PushStatus], now: datetime) -> str:
+def render_overview(systems: list[SystemStatus], now: datetime) -> str:
     rows = []
     for status in systems:
         latest = status.latest
@@ -134,14 +107,7 @@ def render_overview(systems: list[SystemStatus], pushes: list[PushStatus], now: 
             format_size(status.size),
             ", ".join(status.notes),
         ])
-    output = render_table(["SYSTEM", "SOURCE", "LATEST", "AGE", "BACKUPS", "MONTHLY", "SIZE", "NOTE"], rows)
-    if pushes:
-        push_rows = [
-            [push.remote, push.backup or "-", push.at or "-", ", ".join(push.notes)]
-            for push in pushes
-        ]
-        output += "\n\n" + render_table(["PUSH TARGET", "LAST PUSHED", "AT", "NOTE"], push_rows)
-    return output
+    return render_table(["SYSTEM", "SOURCE", "LATEST", "AGE", "BACKUPS", "MONTHLY", "SIZE", "NOTE"], rows)
 
 
 def render_system(status: SystemStatus, now: datetime, policy: Policy) -> str:

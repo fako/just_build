@@ -15,7 +15,7 @@ from invoke.exceptions import Exit, UnexpectedExit
 from invoke.runners import Result
 
 from services.backups import postgres, storage, tasks
-from services.backups.remotes import Direction, register_remote
+from services.backups.remotes import register_remote
 
 
 GLOBALS = """\
@@ -209,7 +209,7 @@ def test_pull_keeps_what_verifies_and_sets_aside_what_does_not(root, tmp_path):
     make_remote_backup(source, "b", "20261101T030000Z")
     make_remote_backup(source, "b", "20261102T030000Z")
     ctx = RecordingContext(root)
-    register_remote(root, "a", "b", "just-build-b", Direction.PULL)
+    register_remote(root, "a", "b", "b.example.com")
     ctx.respond(r"^rsync -a ", rsync_from(source, corrupt="20261102T030000Z"))
 
     call(tasks.pull, ctx)
@@ -217,14 +217,15 @@ def test_pull_keeps_what_verifies_and_sets_aside_what_does_not(root, tmp_path):
     assert [backup.id for backup in storage.list_backups(root, "b")] == ["20261101T030000Z"]
     assert (root / "b" / "20261102T030000Z.corrupt").is_dir()
     [command] = [command for command in ctx.commands if command.startswith("rsync")]
-    assert "just-build-b:./" in command and "--delete" not in command
+    assert "just-build-backup-b:./" in command and "--delete" not in command
+    assert f"ssh -F {root / 'config'} -o BatchMode=yes" in command
 
 
 def test_pull_with_system_recovers_backups_served_under_another_name(root, tmp_path):
     source = tmp_path / "remote-a-serving-b"
     make_remote_backup(source, "b", "20261101T030000Z")
     ctx = RecordingContext(root, system="b")
-    register_remote(root, "b", "a", "just-build-a", Direction.PULL)
+    register_remote(root, "b", "a", "a.example.com")
     ctx.respond(r"^rsync -a ", rsync_from(source))
 
     call(tasks.pull, ctx, remote="a", system="b")
@@ -236,32 +237,30 @@ def test_run_carries_on_past_a_failing_remote_and_still_fails(root, tmp_path):
     source = tmp_path / "remote-c"
     make_remote_backup(source, "c", "20261101T030000Z")
     ctx = RecordingContext(root)
-    register_remote(root, "a", "b", "just-build-b", Direction.PULL)
-    register_remote(root, "a", "c", "just-build-c", Direction.PULL)
-    register_remote(root, "a", "d", "just-build-d-push", Direction.PUSH)
+    register_remote(root, "a", "b", "b.example.com")
+    register_remote(root, "a", "c", "c.example.com")
 
     def refused(command):
         raise UnexpectedExit(Result(command=command, exited=12, stderr="rrsync error: not allowed"))
 
-    ctx.respond(r"just-build-b:", refused)
-    ctx.respond(r"^rsync -a .*just-build-c:", rsync_from(source))
+    ctx.respond(r"just-build-backup-b:", refused)
+    ctx.respond(r"^rsync -a .*just-build-backup-c:", rsync_from(source))
 
     with pytest.raises(Exit, match="1 step"):
         call(tasks.run, ctx)
 
     assert len(storage.list_backups(root, "a")) == 1
     assert len(storage.list_backups(root, "c")) == 1
-    assert not any("just-build-d-push" in command for command in ctx.commands)
 
 
 def test_run_skips_a_remote_that_is_off_without_failing(root, capsys):
     ctx = RecordingContext(root)
-    register_remote(root, "a", "b", "just-build-b", Direction.PULL)
+    register_remote(root, "a", "b", "b.example.com")
 
     def unreachable(command):
         raise UnexpectedExit(Result(command=command, exited=255, stderr="ssh: connect to host b: No route to host"))
 
-    ctx.respond(r"just-build-b:", unreachable)
+    ctx.respond(r"just-build-backup-b:", unreachable)
 
     call(tasks.run, ctx)
 
@@ -289,33 +288,6 @@ def test_run_backs_up_once_per_day(root, monkeypatch, capsys):
     assert "Already backed up since" in capsys.readouterr().out
 
 
-def test_push_refuses_an_alias_that_uses_the_job_key(root):
-    ctx = RecordingContext(root, system="c")
-    register_remote(root, "c", "b", "just-build-b", Direction.PUSH)
-    ctx.respond(r"^ssh -G", lambda command: result(f"identityfile {tasks.JOB_KEY_PATH}\n"))
-
-    with pytest.raises(Exit, match="may only ever read"):
-        call(tasks.push, ctx)
-    assert not any(command.startswith("rsync") for command in ctx.commands)
-
-
-def test_push_sends_the_own_system_and_records_it(root, tmp_path):
-    ctx = RecordingContext(root, system="c")
-    call(tasks.create, ctx)
-    register_remote(root, "c", "b", "just-build-b-push", Direction.PUSH)
-    push_key = tmp_path / "push_key"
-    push_key.write_text("private")
-    ctx.respond(r"^ssh -G", lambda command: result(f"identityfile {push_key}\n"))
-    ctx.respond(r"^ssh-keygen -y", lambda command: result(ok=False))
-
-    call(tasks.push, ctx)
-
-    [command] = [command for command in ctx.commands if command.startswith("rsync")]
-    assert command.endswith(f"{root / 'c'}/ just-build-b-push:./")
-    state = storage.read_push_state(root, "b")
-    assert state is not None and state["backup"] == storage.list_backups(root, "c")[-1].id
-
-
 def test_authorize_writes_a_restricted_line_and_revoke_removes_it(root, tmp_path, monkeypatch):
     authorized_keys = tmp_path / "ssh" / "authorized_keys"
     monkeypatch.setattr(tasks, "AUTHORIZED_KEYS_PATH", authorized_keys)
@@ -323,15 +295,14 @@ def test_authorize_writes_a_restricted_line_and_revoke_removes_it(root, tmp_path
     ctx = RecordingContext(root, system="b")
 
     call(tasks.authorize, ctx, name="a", key="ssh-ed25519 AAAAKEY a@host")
-    call(tasks.authorize, ctx, name="c", key="ssh-ed25519 AAAAPUSH c@host", push=True)
+    call(tasks.authorize, ctx, name="b", key="ssh-ed25519 AAAARECOVER b@host", system="c")
 
     lines = authorized_keys.read_text().splitlines()
     assert lines[0] == (
         f'restrict,command="/usr/bin/rrsync -ro {root / "b"}" ssh-ed25519 AAAAKEY just-build-backups:a:read:b'
     )
     assert lines[1] == (
-        f'restrict,command="/usr/bin/rrsync -wo -no-del -munge {root / "c"}" '
-        "ssh-ed25519 AAAAPUSH just-build-backups:c:push:c"
+        f'restrict,command="/usr/bin/rrsync -ro {root / "c"}" ssh-ed25519 AAAARECOVER just-build-backups:b:read:c'
     )
     assert (root / "c").is_dir()
 
@@ -358,3 +329,81 @@ def test_filter_superuser_leaves_other_roles_alone():
         "CREATE ROLE management;",
         "ALTER ROLE management WITH LOGIN PASSWORD 'SCRAM-SHA-256$management';",
     ]
+
+
+def test_run_skips_the_check_while_another_task_holds_the_root(root, capsys):
+    ctx = RecordingContext(root)
+
+    with storage.root_lock(root):
+        call(tasks.run, ctx)
+
+    assert "Another backup task is running, will try again" in capsys.readouterr().out
+    assert ctx.commands == []
+
+
+def test_a_manual_task_still_refuses_a_held_root(root):
+    ctx = RecordingContext(root)
+
+    with storage.root_lock(root):
+        with pytest.raises(Exit, match="Another backup task"):
+            call(tasks.create, ctx)
+
+
+def test_status_says_when_a_task_is_running(root, capsys):
+    ctx = RecordingContext(root)
+    storage.ensure_root(root)
+
+    call(tasks.status, ctx)
+    assert "running right now" not in capsys.readouterr().out
+
+    with storage.root_lock(root):
+        call(tasks.status, ctx)
+    assert "A backup task is running right now." in capsys.readouterr().out
+
+
+def test_connect_prints_the_authorize_command_with_this_machines_key(root, capsys):
+    job_key = storage.job_key_path(root)
+    job_key.parent.mkdir(parents=True)
+    Path(f"{job_key}.pub").write_text("ssh-ed25519 AAAAJOB just-build-backups:a@host-a\n")
+    ctx = RecordingContext(root)
+
+    call(tasks.connect, ctx, name="b", address="b.example.com", user="fako")
+
+    output = capsys.readouterr().out
+    assert "invoke backups.authorize --name=a --key='ssh-ed25519 AAAAJOB just-build-backups:a@host-a'" in output
+    assert "invoke backups.register --name=b --address=b.example.com --user=fako\n" in output
+
+
+def test_connect_without_a_job_key_says_how_to_get_one(root):
+    with pytest.raises(Exit, match="install.backups"):
+        call(tasks.connect, RecordingContext(root))
+
+
+def test_register_writes_the_block_and_checks_what_the_job_key_can_read(root, capsys):
+    ctx = RecordingContext(root)
+    ctx.respond(r"^rsync --list-only", lambda command: result(ok=False, stderr="Permission denied (publickey)."))
+
+    call(tasks.register, ctx, name="b", address="b.example.com", user="fako", port="2200")
+
+    output = capsys.readouterr().out
+    assert "Host just-build-backup-b\n    HostName b.example.com\n    User fako\n    Port 2200\n" in output
+    assert "could not list just-build-backup-b yet: Permission denied" in output
+    assert "just-build-backup-b" in (root / "config").read_text()
+
+
+def test_check_lists_what_the_job_key_can_read_on_every_system(root, capsys):
+    ctx = RecordingContext(root)
+    register_remote(root, "a", "b", "b.example.com")
+    register_remote(root, "a", "c", "c.example.com")
+    ctx.respond(r"^rsync --list-only .*just-build-backup-b:", lambda command: result(
+        "drwx------          4,096 2026/11/01 03:00:12 .\n"
+    ))
+    ctx.respond(r"^rsync --list-only .*just-build-backup-c:", lambda command: result(
+        ok=False, stderr="Connection refused"
+    ))
+
+    call(tasks.check, ctx)
+
+    output = capsys.readouterr().out
+    assert "just-build-backup-b is reachable but holds no backups yet." in output
+    assert "could not list just-build-backup-c yet: Connection refused" in output

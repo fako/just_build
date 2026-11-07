@@ -1,13 +1,12 @@
 """
 The authorized_keys lines that let other machines reach this one's backups, and nothing else.
 
-Each line forces rrsync, so the key can only run rsync, inside one directory, in one direction, and
-`restrict` takes away the shell, the pty and every kind of forwarding. Lines are tagged in their
+Each line forces rrsync, so the key can only read with rsync, inside one directory, and `restrict` takes
+away the shell, the pty and every kind of forwarding. Lines are tagged in their
 comment so rerunning replaces them and --revoke finds them, without touching lines that are not ours.
 """
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import Path
 from shlex import quote
 
@@ -16,11 +15,6 @@ from services.backups.storage import BackupError
 
 TAG = "just-build-backups"
 KEY_TYPE_PREFIXES = ("ssh-", "ecdsa-", "sk-")
-
-
-class Access(StrEnum):
-    READ = "read"
-    PUSH = "push"
 
 
 def parse_public_key(value: str) -> str:
@@ -34,27 +28,19 @@ def parse_public_key(value: str) -> str:
     return f"{fields[0]} {fields[1]}"
 
 
-def line_tag(name: str, access: Access, system: str) -> str:
-    return f"{TAG}:{name}:{access}:{system}"
+def line_tag(name: str, system: str) -> str:
+    return f"{TAG}:{name}:read:{system}"
 
 
-def authorized_line(public_key: str, name: str, access: Access, system: str, directory: Path,
-                    rrsync: str = "rrsync", source: str | None = None) -> str:
-    """
-    One authorized_keys line.
-
-    READ gives `rrsync -ro`, which refuses every attempt to send files. PUSH gives `rrsync -wo`, which
-    refuses every attempt to read, so a pusher cannot see what the receiver holds, its own directory
-    included. -no-del stops a pusher deleting what it sent before, and -munge stops the symlinks it
-    sends from pointing anywhere on the receiver.
-    """
-    mode = "-ro" if access is Access.READ else "-wo -no-del -munge"
-    command = f"{rrsync} {mode} {quote(str(directory))}".replace('"', '\\"')
+def authorized_line(public_key: str, name: str, system: str, directory: Path, rrsync: str = "rrsync",
+                    source: str | None = None) -> str:
+    """One authorized_keys line: `rrsync -ro` refuses every attempt to send files, or to delete any."""
+    command = f"{rrsync} -ro {quote(str(directory))}".replace('"', '\\"')
     options = ["restrict"]
     if source:
         options.append(f'from="{source}"')
     options.append(f'command="{command}"')
-    return f"{','.join(options)} {public_key} {line_tag(name, access, system)}"
+    return f"{','.join(options)} {public_key} {line_tag(name, system)}"
 
 
 def update_authorized_keys(text: str, tag: str, line: str | None) -> tuple[str, bool]:

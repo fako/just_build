@@ -51,7 +51,7 @@ backups:
   # backups directory in this repository, which git ignores.
   root: null
   # Local time a backup day starts. The timer checks every hour; a machine that is on at this time backs
-  # up then, one that is not backs up at its first check after. See BACKUPS.md.
+  # up then, one that is not backs up at its first check after. See backups/README.md.
   daily_at: "03:00"
   retention:
     # Every backup younger than this is kept.

@@ -541,7 +541,7 @@ Where the build ended up differing from, or adding to, the plan above:
   inheriting the vector extension `setup_database.sh` installs into `template1`.
 - Code lives in `services/backups/`: `storage.py`, `retention.py`, `remotes.py`, `access.py`,
   `transport.py`, `postgres.py`, `status.py` and `tasks.py`, with tests under `tests/` run by
-  `invoke backups.test`. `PyYAML` became an explicit requirement for `remotes.yml`.
+  `invoke backups.test`.
 - Verified end to end: create and restore (full and `--database`) against a throwaway pgvector
   project, including role passwords and vector columns; pull, push and the register check through real
   `rrsync` with a stand-in for ssh, including the refusals (writing or deleting with a read key, reading
@@ -559,3 +559,24 @@ Where the build ended up differing from, or adding to, the plan above:
   their first check after; every check pulls. A stack that is not up or a remote that is off (ssh exit
   255, with a 20 second connect timeout) is skipped until the next check rather than failing the run.
   The staggered per-machine schedules are gone, and `install.backups --schedule` with them.
+- First real install: the timer fired the moment `install.sh` started it (its boot delay had passed)
+  and lost the lock to the install's own first backup, leaving the unit failed. Install now runs the
+  service once through systemd before enabling the timer, and a timer check that finds the root locked
+  skips itself instead of failing. `backups.status` reports a running task.
+- `backups.connect [--name] [--address] [--user]` prints the job key with the authorize command for the
+  other machine, the SSH alias and the register command, filled in as far as the options allow.
+  `install.backups` ends by calling it, rather than echoing its own version.
+- The registry moved from `remotes.yml` into `<root>/config`, an SSH config with one
+  `just-build-backup-<name>` block per system, written by `backups.register --name --address [--user]
+  [--port] [--push --identity]`. Every ssh and rsync call passes it with `-F`, so `~/.ssh/config` needs
+  no aliases. A block using the job key is a pull remote, any other key a push target, which is the
+  same line the SSH access rules draw. Options added to a block by hand survive rewrites.
+- Keys moved under the root as well, next to `config`: the job key is `<root>/keys/job`, made by
+  `install.backups`, and `register --push`
+  makes `<root>/keys/push-<name>`, with ssh-keygen asking for its passphrase, then prints the
+  `authorize --push` command for the receiver. Nothing is used from `~/.ssh` apart from
+  `authorized_keys`. `backups.check` replaces every hand-typed ssh or rsync command the docs suggested,
+  and BACKUPS.md became `backups/README.md`.
+- Push was removed entirely: backups only ever move by pulling, with the read-only job key, and no
+  machine can write to another. That took `backups.push`, `register --push`, `authorize --push`, push
+  keys and the push status table with it. The job key lives in `<root>/keys/job`.

@@ -14,14 +14,20 @@ from invoke.context import Context
 from invoke.exceptions import Exit, UnexpectedExit
 from invoke.tasks import task
 
-from services.backups.access import Access, authorized_line, line_tag, parse_public_key, write_authorized_keys
+from services.backups.access import authorized_line, line_tag, parse_public_key, write_authorized_keys
 from services.backups.postgres import Postgres, PostgresUnavailable
-from services.backups.remotes import Direction, Remote, read_remotes, register_remote, unregister_remote
+from services.backups.remotes import (
+    Remote,
+    read_remotes,
+    register_remote,
+    render_block,
+    ssh_config_path,
+    unregister_remote,
+)
 from services.backups.retention import Policy, backups_to_delete, clean_candidates
 from services.backups.schedule import backup_due, day_start, parse_daily_at
 from services.backups.status import (
     format_size,
-    push_status,
     render_overview,
     render_system,
     system_order,
@@ -36,14 +42,17 @@ from services.backups.storage import (
     REPOSITORY_ROOT,
     Backup,
     BackupError,
+    LockBusy,
     backup_root,
     delete_directory,
     directory_size,
     ensure_root,
     file_entry,
     find_backup,
+    job_key_path,
     list_backups,
     list_suffixed,
+    lock_held,
     mark_corrupt,
     new_backup_id,
     read_manifest,
@@ -53,18 +62,13 @@ from services.backups.storage import (
     validate_system_name,
     verify_backup,
     write_manifest,
-    write_push_state,
 )
 from services.backups.transport import (
-    JOB_KEY_PATH,
     UNREACHABLE_EXIT_CODE,
     fetch_command,
-    identity_files,
     list_command,
     listed_names,
     pull_command,
-    push_command,
-    uses_job_key,
 )
 
 
@@ -205,7 +209,7 @@ def _pull_remotes(settings: Settings, remote_name: str | None) -> list[Remote]:
         if remote_name not in remotes:
             raise BackupError(f"'{remote_name}' is not registered. Add it with 'invoke backups.register'.")
         return [remotes[remote_name]]
-    return [remote for remote in remotes.values() if remote.direction is Direction.PULL]
+    return list(remotes.values())
 
 
 def _arrived(rsync_output: str) -> set[str]:
@@ -227,7 +231,8 @@ def _pull(ctx: Context, settings: Settings, remote: Remote, system: str) -> list
     destination = system_directory(settings.root, system)
     destination.mkdir(parents=True, exist_ok=True)
     print(f"[backups] Pulling {system} from {remote.host}")
-    result = ctx.run(f"{pull_command(remote.host, destination)} --out-format='%n'", hide=True)
+    command = pull_command(remote.host, destination, ssh_config_path(settings.root))
+    result = ctx.run(f"{command} --out-format='%n'", hide=True)
 
     corrupt = []
     arrived = sorted(_arrived(result.stdout))
@@ -240,28 +245,6 @@ def _pull(ctx: Context, settings: Settings, remote: Remote, system: str) -> list
     received = len(arrived) - len(corrupt)
     print(f"[backups] Pulled {received} new backup(s) of {system}" + (f", {len(corrupt)} corrupt" if corrupt else ""))
     return corrupt
-
-
-def _push(ctx: Context, settings: Settings, remote: Remote) -> None:
-    ssh_config = ctx.run(f"ssh -G {quote(remote.host)}", hide=True).stdout
-    if uses_job_key(ssh_config):
-        raise BackupError(
-            f"{remote.host} would connect with the passphrase-less job key {JOB_KEY_PATH}, which may only "
-            "ever read. Give the push target an SSH alias of its own, with a key you made for writing."
-        )
-    for identity in identity_files(ssh_config):
-        if identity.is_file():
-            unprotected = ctx.run(f"ssh-keygen -y -P '' -f {quote(str(identity))}", hide=True, warn=True).ok
-            if unprotected:
-                print(f"[backups] WARNING: {identity} has no passphrase. Keys that write to other machines should.")
-
-    backups = list_backups(settings.root, settings.system)
-    if not backups:
-        raise BackupError(f"There are no backups of '{settings.system}' to push yet.")
-    print(f"[backups] Pushing {settings.system} to {remote.host}")
-    ctx.run(push_command(remote.host, system_directory(settings.root, settings.system)))
-    write_push_state(settings.root, remote.name, backups[-1].id)
-    print(f"[backups] Pushed {settings.system} up to {backups[-1].id} to {remote.name}")
 
 
 @task(help={"label": "A note stored in the manifest, shown by backups.status --system"})
@@ -330,17 +313,17 @@ def restore(ctx: Context, backup: str = "latest", database: str | None = None, y
         print(f"[backups] Restored {len(targets)} database(s) from {chosen.id}")
 
 
-def _check_pull_remote(ctx: Context, remote: Remote) -> None:
+def _check_pull_remote(ctx: Context, remote: Remote, ssh_config: Path) -> None:
     """
     See whether the job key can read the remote, and whether what it reads is the system expected.
 
     A warning rather than an error, so a remote can be registered before the other side has run
     backups.authorize.
     """
-    result = ctx.run(list_command(remote.host), hide=True, warn=True)
+    result = ctx.run(list_command(remote.host, ssh_config), hide=True, warn=True)
     if not result.ok:
         print(f"[backups] WARNING: could not list {remote.host} yet: {result.stderr.strip()}")
-        print(f"[backups] On {remote.name}, run: invoke backups.authorize --name=<this system> --key=<job key>")
+        print(f"[backups] 'invoke backups.connect --name={remote.name}' prints what to run on {remote.name} first.")
         return
     backup_ids = sorted(name for name in listed_names(result.stdout) if BACKUP_ID_PATTERN.match(name))
     if not backup_ids:
@@ -348,7 +331,8 @@ def _check_pull_remote(ctx: Context, remote: Remote) -> None:
         return
     with tempfile.TemporaryDirectory() as directory:
         fetched = ctx.run(
-            fetch_command(remote.host, f"{backup_ids[-1]}/{MANIFEST_FILE}", Path(directory)), hide=True, warn=True
+            fetch_command(remote.host, f"{backup_ids[-1]}/{MANIFEST_FILE}", Path(directory), ssh_config),
+            hide=True, warn=True,
         )
         if not fetched.ok:
             print(f"[backups] WARNING: {remote.host} lists backups but its newest manifest could not be read.")
@@ -362,19 +346,29 @@ def _check_pull_remote(ctx: Context, remote: Remote) -> None:
 
 @task(help={
     "name": "The other machine's system name",
-    "host": "The SSH alias to reach it through, from ~/.ssh/config",
-    "push": "Register a push target instead of a system to pull from",
+    "address": "Its host name or IP address",
+    "user": "The user that runs just_build there, when it differs from yours",
+    "port": "Its SSH port, when it is not 22",
 })
-def register(ctx: Context, name: str, host: str, push: bool = False) -> None:
-    """Register a system to pull backups from, or with --push a machine to push this system's backups to."""
+def register(ctx: Context, name: str, address: str, user: str | None = None, port: str | None = None) -> None:
+    """
+    Register a system to pull backups from, with the read-only job key.
+
+    Writes a just-build-backup-<name> block to <root>/config, the SSH config every backup task connects
+    through, then checks what the job key can read there. Registering a name again replaces its
+    address, user and port.
+    """
     settings = _settings(ctx)
-    with _reported(), root_lock(settings.root):
-        direction = Direction.PUSH if push else Direction.PULL
-        remote = register_remote(settings.root, settings.system, name, host, direction)
-    print(f"[backups] Registered {remote.name} ({remote.direction}) through {remote.host}")
-    if remote.direction is Direction.PULL:
-        with _reported():
-            _check_pull_remote(ctx, remote)
+    with _reported():
+        try:
+            port_number = int(port) if port else None
+        except ValueError as exc:
+            raise BackupError(f"--port should be a number, not '{port}'.") from exc
+        with root_lock(settings.root):
+            remote = register_remote(settings.root, settings.system, name, address, user, port_number)
+        print(f"[backups] Registered {remote.name} in {ssh_config_path(settings.root)}:\n")
+        print(render_block(settings.root, remote) + "\n")
+        _check_pull_remote(ctx, remote, ssh_config_path(settings.root))
 
 
 @task(help={"name": "The system name to forget"})
@@ -390,30 +384,26 @@ def unregister(ctx: Context, name: str) -> None:
     "name": "The system name of the machine being given access",
     "key": "Its public key, or the path to a .pub file. Not needed with --revoke",
     "system": "Expose this system's directory instead of the own one, for disaster recovery",
-    "push": "Let it write into its own directory here instead of reading",
     "source": "Only accept the key from this address (an sshd from= pattern)",
     "revoke": "Remove the access instead of granting it",
 })
-def authorize(ctx: Context, name: str, key: str | None = None, system: str | None = None, push: bool = False,
+def authorize(ctx: Context, name: str, key: str | None = None, system: str | None = None,
               source: str | None = None, revoke: bool = False) -> None:
     """
-    Let another machine's key reach this machine's backups: read-only by default, write-only with --push.
+    Let another machine's job key read this machine's backups, and do nothing else.
 
-    Writes a restricted, rrsync-forced line to ~/.ssh/authorized_keys. The key can do nothing but
-    rsync, inside one directory, in one direction.
+    Writes a restricted, rrsync-forced line to ~/.ssh/authorized_keys. The key can do nothing but read
+    with rsync, inside one directory.
     """
     settings = _settings(ctx)
     with _reported():
         validate_system_name(name)
-        if push and system:
-            raise BackupError("A push always lands in the sender's own directory, so --system does not apply.")
-        access = Access.PUSH if push else Access.READ
-        exposed = name if push else validate_system_name(system or settings.system)
-        tag = line_tag(name, access, exposed)
+        exposed = validate_system_name(system or settings.system)
+        tag = line_tag(name, exposed)
 
         if revoke:
             found = write_authorized_keys(AUTHORIZED_KEYS_PATH, tag, None)
-            print(f"[backups] {'Revoked' if found else 'There was no'} {access} access for {name} to {exposed}")
+            print(f"[backups] {'Revoked' if found else 'There was no'} read access for {name} to {exposed}")
             return
 
         if not key:
@@ -424,10 +414,9 @@ def authorize(ctx: Context, name: str, key: str | None = None, system: str | Non
         directory = system_directory(settings.root, exposed)
         ensure_root(settings.root)
         directory.mkdir(exist_ok=True)
-        line = authorized_line(parse_public_key(key), name, access, exposed, directory, rrsync=rrsync, source=source)
+        line = authorized_line(parse_public_key(key), name, exposed, directory, rrsync=rrsync, source=source)
         found = write_authorized_keys(AUTHORIZED_KEYS_PATH, tag, line)
-        verb = "write into" if push else "read"
-        print(f"[backups] {'Updated' if found else 'Granted'}: {name} may {verb} {directory} and nothing else")
+        print(f"[backups] {'Updated' if found else 'Granted'}: {name} may read {directory} and nothing else")
 
 
 @task(help={
@@ -452,26 +441,68 @@ def pull(ctx: Context, remote: str | None = None, system: str | None = None) -> 
         _prune(settings, pulled)
 
 
-@task(help={"remote": "Push only to this registered push target"})
-def push(ctx: Context, remote: str | None = None) -> None:
-    """
-    Send this system's backups to registered push targets. Manual only, never run by the timer.
+def _connect_instructions(own_system: str, public_key_path: Path, public_key: str, other: str | None,
+                          address: str | None, user: str | None) -> str:
+    other_name = other or "<other system>"
+    register_command = f"invoke backups.register --name={other_name} --address={address or '<its address>'}"
+    if user:
+        register_command += f" --user={user}"
+    return "\n".join([
+        f"This machine is '{own_system}'. Its read-only job key is {public_key_path}:",
+        "",
+        f"    {public_key}",
+        "",
+        f"To let {own_system} pull the backups of {other or 'another machine'}:",
+        "",
+        f"1. On {other_name}, in its just_build repository, run:",
+        "",
+        f"    invoke backups.authorize --name={own_system} --key='{public_key}'",
+        "",
+        "2. Then here, run:",
+        "",
+        f"    {register_command}",
+        *([] if user else [
+            "",
+            "   Add --user when the other machine runs just_build as a different user, and --port when its",
+            "   SSH port is not 22.",
+        ]),
+    ])
 
-    Connects through each target's own SSH alias, with a key you made and protected with a passphrase.
-    """
+
+@task(help={
+    "name": "The system name of the machine to pull from, to fill in the commands",
+    "address": "Its host name or IP address, to fill in the register command",
+    "user": "The user that runs just_build there, to fill in the register command",
+})
+def connect(ctx: Context, name: str | None = None, address: str | None = None, user: str | None = None) -> None:
+    """Print this machine's job key and the exact commands that let it pull another machine's backups."""
     settings = _settings(ctx)
-    with _reported(), root_lock(settings.root):
+    with _reported():
+        if name:
+            validate_system_name(name)
+        public_key_path = Path(f"{job_key_path(settings.root)}.pub")
+        if not public_key_path.is_file():
+            raise BackupError(f"There is no job key at {public_key_path} yet. 'invoke install.backups' creates it.")
+        public_key = public_key_path.read_text().strip()
+        parse_public_key(public_key)
+        print(_connect_instructions(settings.system, public_key_path, public_key, name, address, user))
+
+
+@task(help={"remote": "Check only this registered system"})
+def check(ctx: Context, remote: str | None = None) -> None:
+    """Test every registered system the way the timer connects to it, with the job key. Changes nothing."""
+    settings = _settings(ctx)
+    with _reported():
         remotes = read_remotes(settings.root)
-        targets = [item for item in remotes.values() if item.direction is Direction.PUSH]
         if remote:
-            targets = [item for item in targets if item.name == remote]
-            if not targets:
-                raise BackupError(f"'{remote}' is not registered as a push target.")
-        if not targets:
-            print("[backups] No push targets registered.")
+            if remote not in remotes:
+                raise BackupError(f"'{remote}' is not registered.")
+            remotes = {remote: remotes[remote]}
+        if not remotes:
+            print(f"[backups] Nothing registered in {ssh_config_path(settings.root)}.")
             return
-        for target in targets:
-            _push(ctx, settings, target)
+        for item in remotes.values():
+            _check_pull_remote(ctx, item, ssh_config_path(settings.root))
 
 
 @task(help={"system": "List every backup of this system and why retention keeps it"})
@@ -494,7 +525,9 @@ def status(ctx: Context, system: str | None = None) -> None:
             for name, source in order
         ]
         print(f"Backups in {settings.root}\n")
-        print(render_overview(systems, push_status(settings.root, settings.system, remotes), now))
+        print(render_overview(systems, now))
+        if lock_held(settings.root):
+            print("\nA backup task is running right now.")
 
 
 @task(help={
@@ -567,46 +600,57 @@ def run(ctx: Context) -> None:
 
     A backup day starts at backups.daily_at (03:00), so a machine that is on then backs up then, and
     one that is not backs up at its first check after. A stack that is not up yet, or a remote that is
-    off, is skipped until the next check. Anything else that fails is reported, the rest carries on,
-    and the task fails at the end so systemd records it. Never pushes.
+    off, is skipped until the next check, and so is the whole check while another backup task runs.
+    Anything else that fails is reported, the rest carries on, and the task fails at the end so systemd
+    records it.
     """
     settings = _settings(ctx)
-    failures: list[str] = []
-    with _reported(), root_lock(settings.root):
-        now = _now()
-        own_backups = [backup.id for backup in list_backups(settings.root, settings.system)]
-        if not backup_due(own_backups, now, settings.daily_at):
-            since = day_start(now, settings.daily_at).astimezone()
-            print(f"[backups] Already backed up since {since:%Y-%m-%d %H:%M}, nothing to create")
-        else:
-            try:
-                _create(ctx, settings)
-            except PostgresUnavailable:
-                print("[backups] The postgres service is not running yet, will try again at the next check")
-            except (BackupError, UnexpectedExit) as exc:
-                failures.append(f"create: {_failure(exc)}")
-        try:
-            remotes = _pull_remotes(settings, None)
-        except BackupError as exc:
-            failures.append(f"remotes: {exc}")
-            remotes = []
-        for remote in remotes:
-            try:
-                if _pull(ctx, settings, remote, remote.name):
-                    failures.append(f"pull {remote.name}: corrupt backups arrived")
-            except UnexpectedExit as exc:
-                if exc.result.exited == UNREACHABLE_EXIT_CODE:
-                    print(f"[backups] {remote.name} is not reachable, will try again at the next check")
-                else:
-                    failures.append(f"pull {remote.name}: {_failure(exc)}")
-            except BackupError as exc:
-                failures.append(f"pull {remote.name}: {_failure(exc)}")
-        _prune(settings, system_names(settings.root))
+    try:
+        with root_lock(settings.root), _reported():
+            failures = _check(ctx, settings)
+    except LockBusy:
+        print("[backups] Another backup task is running, will try again at the next check")
+        return
     if failures:
         for failure in failures:
             print(f"[backups] FAILED {failure}")
         raise Exit(f"[backups] {len(failures)} step(s) failed", code=1)
     print("[backups] Done")
+
+
+def _check(ctx: Context, settings: Settings) -> list[str]:
+    """One timer check, under the root lock. Returns what failed."""
+    failures: list[str] = []
+    now = _now()
+    own_backups = [backup.id for backup in list_backups(settings.root, settings.system)]
+    if not backup_due(own_backups, now, settings.daily_at):
+        since = day_start(now, settings.daily_at).astimezone()
+        print(f"[backups] Already backed up since {since:%Y-%m-%d %H:%M}, nothing to create")
+    else:
+        try:
+            _create(ctx, settings)
+        except PostgresUnavailable:
+            print("[backups] The postgres service is not running yet, will try again at the next check")
+        except (BackupError, UnexpectedExit) as exc:
+            failures.append(f"create: {_failure(exc)}")
+    try:
+        remotes = _pull_remotes(settings, None)
+    except BackupError as exc:
+        failures.append(f"remotes: {exc}")
+        remotes = []
+    for remote in remotes:
+        try:
+            if _pull(ctx, settings, remote, remote.name):
+                failures.append(f"pull {remote.name}: corrupt backups arrived")
+        except UnexpectedExit as exc:
+            if exc.result.exited == UNREACHABLE_EXIT_CODE:
+                print(f"[backups] {remote.name} is not reachable, will try again at the next check")
+            else:
+                failures.append(f"pull {remote.name}: {_failure(exc)}")
+        except BackupError as exc:
+            failures.append(f"pull {remote.name}: {_failure(exc)}")
+    _prune(settings, system_names(settings.root))
+    return failures
 
 
 @task(name="test", help={
@@ -631,5 +675,5 @@ def backups_test(ctx: Context, test_file: str | None = None, test_method: str | 
 
 collection = Collection(
     "backups",
-    create, restore, register, unregister, authorize, pull, push, status, prune, clean, run, backups_test,
+    create, restore, register, unregister, authorize, connect, check, pull, status, prune, clean, run, backups_test,
 )

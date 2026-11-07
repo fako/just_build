@@ -6,8 +6,7 @@ After=network-online.target docker.service
 
 [Service]
 Type=oneshot
-# The installing user: it owns the backups, reaches the Docker socket, and its ~/.ssh/config holds
-# the aliases remotes are registered under.
+# The installing user: it owns the backups, their keys and SSH config, and reaches the Docker socket.
 User=@USER@
 WorkingDirectory=@REPOSITORY@
 # The same values activate.sh loads. The generated secrets are alphanumeric, so systemd parses the

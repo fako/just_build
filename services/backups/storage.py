@@ -28,8 +28,11 @@ GLOBALS_FILE = "globals.sql"
 PARTIAL_SUFFIX = ".partial"
 CORRUPT_SUFFIX = ".corrupt"
 LOCK_FILE = ".lock"
-STATE_DIR = ".state"
-REMOTES_FILE = "remotes.yml"
+SSH_CONFIG_FILE = "config"
+KEYS_DIR = "keys"
+JOB_KEY_NAME = "job"
+# Directories in the root that are not systems, and so can never be a system's name.
+RESERVED_NAMES = frozenset({KEYS_DIR})
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 # Inside the repository, wherever it was cloned, and ignored by git. Other machines never need to know
@@ -39,6 +42,10 @@ DEFAULT_ROOT = REPOSITORY_ROOT / "backups"
 
 class BackupError(Exception):
     pass
+
+
+class LockBusy(BackupError):
+    """Another task holds the root. The hourly timer treats this as not now, rather than as a failure."""
 
 
 @dataclass(frozen=True)
@@ -61,6 +68,8 @@ def validate_system_name(name: str | None) -> str:
             f"'{name or ''}' is not a valid system name. Use lowercase letters, digits and dashes, "
             "starting with a letter or digit."
         )
+    if name in RESERVED_NAMES:
+        raise BackupError(f"'{name}' is taken by a directory the backups use themselves. Pick another name.")
     return name
 
 
@@ -88,7 +97,7 @@ def system_names(root: Path) -> list[str]:
         return []
     return sorted(
         path.name for path in root.iterdir()
-        if path.is_dir() and SYSTEM_NAME_PATTERN.match(path.name)
+        if path.is_dir() and SYSTEM_NAME_PATTERN.match(path.name) and path.name not in RESERVED_NAMES
     )
 
 
@@ -201,6 +210,15 @@ def ensure_root(root: Path) -> None:
     root.chmod(0o700)
 
 
+def keys_directory(root: Path) -> Path:
+    return root / KEYS_DIR
+
+
+def job_key_path(root: Path) -> Path:
+    """The passphrase-less key the timer pulls with. Other machines only ever authorize it to read."""
+    return keys_directory(root) / JOB_KEY_NAME
+
+
 @contextmanager
 def root_lock(root: Path) -> Iterator[None]:
     """
@@ -209,35 +227,31 @@ def root_lock(root: Path) -> Iterator[None]:
     A timer run pruning while a manual pull is still writing would delete what is arriving, so every
     task that writes or deletes takes this. It fails instead of waiting, because a task queued behind
     a hung transfer is worse than one that says so.
+
+    The .lock file itself stays. What is held is a lock on it, which the kernel releases when the task
+    exits, however it exits, so a crashed task never leaves the root locked.
     """
     ensure_root(root)
     with (root / LOCK_FILE).open("w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise BackupError(f"Another backup task is using {root}. Try again when it has finished.") from exc
+            raise LockBusy(f"Another backup task is using {root}. Try again when it has finished.") from exc
         try:
             yield
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def push_state_path(root: Path, remote: str) -> Path:
-    return root / STATE_DIR / f"pushed-{remote}.json"
-
-
-def write_push_state(root: Path, remote: str, backup_id: str, now: datetime | None = None) -> None:
-    now = now or datetime.now(timezone.utc)
-    path = push_state_path(root, remote)
-    path.parent.mkdir(exist_ok=True)
-    path.write_text(json.dumps({"backup": backup_id, "at": now.isoformat()}) + "\n")
-
-
-def read_push_state(root: Path, remote: str) -> dict | None:
-    path = push_state_path(root, remote)
-    if not path.is_file():
-        return None
-    try:
-        return json.loads(path.read_text())
-    except ValueError:
-        return None
+def lock_held(root: Path) -> bool:
+    """Whether a backup task is running right now, without taking the lock from it."""
+    path = root / LOCK_FILE
+    if not path.exists():
+        return False
+    with path.open("r") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        return False

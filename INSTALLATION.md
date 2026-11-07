@@ -141,7 +141,7 @@ each month, and makes a first backup straight away. Backups go to the
 there.
 
 Restoring, keeping copies of other machines, the SSH keys involved, and everything else is in
-[BACKUPS.md](BACKUPS.md).
+[backups/README.md](backups/README.md).
 
 
 ## n8n

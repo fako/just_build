@@ -496,7 +496,7 @@ def backups_timer(ctx: Context, uninstall: bool = False) -> None:
     Install an hourly systemd timer that backs this machine up once a day and pulls registered systems.
 
     Requires sudo. Also generates the passphrase-less job key the timer pulls with, which other
-    machines only ever authorize to read. See BACKUPS.md for connecting machines to each other.
+    machines only ever authorize to read. See backups/README.md for connecting machines to each other.
     """
     script_path = _repository_root() / "services" / "backups" / "install.sh"
     if uninstall:
