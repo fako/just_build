@@ -8,6 +8,7 @@ workspaces/src/secrets/
 
 # Backups related files
 /backups/
+/data/
 
 #######################
 # Python
